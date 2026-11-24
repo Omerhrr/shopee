@@ -184,13 +184,19 @@ def translate_text(text: str, db: Session | None = None, src: str = "ko", tgt: s
             # Google's free endpoint 429s on shared hosts like Vercel: fall back to Microsoft automatically
             try:
                 return _google_free(chunk, src, tgt)
-            except Exception:
-                return _edge(chunk, src, tgt)
+            except Exception as e1:
+                try:
+                    return _edge(chunk, src, tgt)
+                except Exception as e2:
+                    raise RuntimeError(f"Google failed: {str(e1)[:120]} | Microsoft fallback failed: {type(e2).__name__}: {str(e2)[:160]}")
         if provider == "edge":
             try:
                 return _edge(chunk, src, tgt)
-            except Exception:
-                return _google_free(chunk, src, tgt)
+            except Exception as e1:
+                try:
+                    return _google_free(chunk, src, tgt)
+                except Exception as e2:
+                    raise RuntimeError(f"Microsoft failed: {type(e1).__name__}: {str(e1)[:160]} | Google fallback failed: {str(e2)[:120]}")
         if provider == "libre":
             return _libre(chunk, cfg.get("libre_url", ""), key, src, tgt)
         if provider == "papago":
