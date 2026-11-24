@@ -81,6 +81,14 @@ class _PathNormalizer:
     async def __call__(self, scope, receive, send):
         if scope["type"] in ("http", "websocket"):
             path = scope.get("path") or "/"
+            if path in ("/", "") or path.startswith("/api/index"):
+                # rewrite lost the browser path: recover it from proxy headers when present
+                hd = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
+                for key in ("x-vercel-original-path", "x-original-uri", "x-forwarded-uri", "x-matched-path"):
+                    cand = hd.get(key, "")
+                    if cand.startswith("/") and "[" not in cand and not cand.startswith("/api/index"):
+                        path = cand.split("?")[0]
+                        break
             if path.startswith("/api/index"):
                 path = path[len("/api/index"):] or "/"
             if not (path.startswith("/api/") or path == "/api" or path.startswith("/media/")):
@@ -98,7 +106,9 @@ if IS_VERCEL:
     async def _not_found(request: _Req, exc):
         # diagnostic: shows the path the function actually received
         detail = getattr(exc, "detail", "Not Found")
-        return _JR({"detail": detail, "seen_path": request.scope.get("path")}, status_code=404)
+        hdrs = {k: v for k, v in request.headers.items()
+                if k.startswith(("x-vercel", "x-matched", "x-invoke", "x-forwarded-uri", "x-original", "x-now"))}
+        return _JR({"detail": detail, "seen_path": request.scope.get("path"), "hdrs": hdrs}, status_code=404)
 
 
 @app.get("/media/{path:path}")
