@@ -133,15 +133,6 @@ export function deriveAccent(accent: string): Record<string, string> {
   }
 }
 
-const INK_LIGHT: Record<string, string> = {
-  '50': '248 250 252', '100': '241 245 249', '200': '226 232 240', '300': '203 213 225', '400': '148 163 184',
-  '500': '100 116 139', '600': '71 85 105', '700': '51 65 85', '800': '30 41 59', '900': '15 23 42'
-}
-const INK_DARK: Record<string, string> = {
-  '50': '23 28 36', '100': '31 38 48', '200': '42 50 64', '300': '59 70 86', '400': '133 147 166',
-  '500': '154 167 184', '600': '179 190 203', '700': '201 210 220', '800': '220 227 234', '900': '238 242 246'
-}
-
 function hexToTriplet(hex: string): string {
   const [r, g, b] = hexToRgb(hex)
   return `${r} ${g} ${b}`
@@ -163,17 +154,21 @@ export function googleFontsHref(families: string[]): string | null {
 
 const shadeKeys = ['50', '100', '200', '300', '400', '500', '600', '700', '800', '900']
 
-/** Build the full :root CSS variables block for the given settings + color mode. */
-export function buildVarsCss(theme: ThemeConfig, fonts: FontsConfig, mode: 'light' | 'dark'): string {
+/**
+ * Build the :root CSS variables block for the given settings.
+ * IMPORTANT: this block is injected at `html:root` specificity, which beats the
+ * `[data-mode='dark']` overrides in main.css. Therefore it must contain ONLY
+ * mode-independent variables (brand, accent, radius, fonts). The mode palette
+ * (ink scale, surface/bg) lives exclusively in main.css so that flipping
+ * `data-mode` restyles the page instantly - even before Vue hydrates.
+ */
+export function buildVarsCss(theme: ThemeConfig, fonts: FontsConfig): string {
   const brand = deriveBrand(theme.primary || '#EA580C')
   const accent = deriveAccent(theme.accent || '#F59E0B')
   const r = clamp(Number(theme.radius ?? 12), 0, 32)
   const lines: string[] = []
   for (const k of shadeKeys) lines.push(`--brand-${k}: ${hexToTriplet(brand[k])};`)
   for (const k of shadeKeys) lines.push(`--accent-${k}: ${hexToTriplet(accent[k])};`)
-  lines.push(`--c-surface: ${mode === 'dark' ? '19 25 34' : '255 255 255'};`)
-  lines.push(`--c-bg: ${mode === 'dark' ? '12 16 23' : '255 255 255'};`)
-  lines.push(`--c-inverse-bg: ${mode === 'dark' ? '13 20 32' : '15 23 42'};`)
   lines.push(`--radius-sm: ${Math.max(2, r * 0.5)}px;`)
   lines.push(`--radius-md: ${Math.max(3, r * 0.75)}px;`)
   lines.push(`--radius-lg: ${r}px;`)
@@ -183,8 +178,6 @@ export function buildVarsCss(theme: ThemeConfig, fonts: FontsConfig, mode: 'ligh
   lines.push(`--font-body: ${fontStack(fonts.family)};`)
   lines.push(`--font-heading: ${fontStack(fonts.heading)};`)
   lines.push(`--heading-weight: ${fonts.headingWeight || 800};`)
-  const ink = mode === 'dark' ? INK_DARK : INK_LIGHT
-  for (const k of shadeKeys) lines.push(`--ink-${k}: ${ink[k]};`)
   // html:root keeps a slightly higher specificity than the :root defaults in
   // the compiled tailwind stylesheet, so admin settings always win there.
   return `html:root{${lines.join('')}}`
@@ -210,7 +203,7 @@ export function useTheme() {
   }
   const toggleMode = () => setMode(mode.value === 'dark' ? 'light' : 'dark')
 
-  const varsCss = computed(() => buildVarsCss(settings.value.theme, settings.value.fonts, mode.value))
+  const varsCss = computed(() => buildVarsCss(settings.value.theme, settings.value.fonts))
   const fontsHref = computed(() => googleFontsHref([settings.value.fonts.family, settings.value.fonts.heading]))
   const siteName = computed(() => settings.value.site_name || 'Shopee')
 

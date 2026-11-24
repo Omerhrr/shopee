@@ -64,7 +64,7 @@ useHead({ title: () => t('admin.dashboard') })
         </div>
       </div>
 
-      <div v-if="data.last_scrape?.status === 'error'" class="card p-4 border-rose-200 bg-rose-50 text-sm text-rose-700">
+      <div v-if="data.last_scrape?.status === 'error'" class="card p-4 border-rose-200 bg-rose-50 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
         <b>{{ data.last_scrape?.source }}</b> - {{ data.last_scrape?.message }}
       </div>
     </template>

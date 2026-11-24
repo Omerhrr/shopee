@@ -61,6 +61,7 @@ const switchLocale = (l: 'en' | 'ko') => setLocale(l)
 
         <button
           class="btn-ghost"
+          data-mode-toggle
           :aria-label="mode === 'dark' ? t('nav.lightMode') : t('nav.darkMode')"
           :title="mode === 'dark' ? t('nav.lightMode') : t('nav.darkMode')"
           @click="toggleMode"

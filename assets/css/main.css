@@ -59,6 +59,7 @@
 }
 
 [data-mode='dark'] {
+  color-scheme: dark;
   --ink-50: 23 28 36;
   --ink-100: 31 38 48;
   --ink-200: 42 50 64;

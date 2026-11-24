@@ -208,11 +208,11 @@ useHead({ title: () => t('admin.products') })
             <td class="px-3 py-3 text-ink-600">{{ money(p.price_cost) }}</td>
             <td class="px-3 py-3 font-bold text-ink-900">{{ money(p.price_sell) }}</td>
             <td class="px-3 py-3">
-              <span class="badge bg-emerald-50 text-emerald-700">{{ p.effective_margin_pct }}%</span>
+              <span class="badge bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">{{ p.effective_margin_pct }}%</span>
             </td>
             <td class="px-3 py-3">
-              <span class="badge" :class="p.status === 'published' ? 'bg-brand-100 text-brand-800' : p.status === 'archived' ? 'bg-amber-100 text-amber-800' : 'bg-ink-100 text-ink-500'">{{ p.status === 'published' ? t('admin.published') : p.status === 'archived' ? t('admin.archived') : t('admin.draft') }}</span>
-              <span v-if="p.translation_status === 'pending'" class="badge bg-amber-100 text-amber-700 ml-1">KO</span>
+              <span class="badge" :class="p.status === 'published' ? 'bg-brand-100 text-brand-800 dark:bg-brand-500/15 dark:text-brand-300' : p.status === 'archived' ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300' : 'bg-ink-100 text-ink-500'">{{ p.status === 'published' ? t('admin.published') : p.status === 'archived' ? t('admin.archived') : t('admin.draft') }}</span>
+              <span v-if="p.translation_status === 'pending'" class="badge bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300 ml-1">KO</span>
             </td>
             <td class="px-3 py-3 text-ink-500 text-xs max-w-[130px] truncate">{{ p.source_name || (p.is_manual ? 'Manual' : '-') }}</td>
             <td class="px-3 py-3">

@@ -28,7 +28,13 @@ const desc = computed(() => {
   return product.value?.desc_en || product.value?.desc_ko || ''
 })
 
+const setQty = (v: number) => {
+  const n = Number.isFinite(v) ? Math.round(v) : 1
+  qty.value = Math.min(99, Math.max(1, n))
+}
+
 const addToCart = (buy = false) => {
+  setQty(qty.value)
   cart.add(product.value, qty.value)
   if (buy) router.push('/cart')
   else toast(t('product.added'))
@@ -77,11 +83,11 @@ useHead({
 
       <!-- Info -->
       <div>
-        <div v-if="pendingTranslation" class="badge bg-amber-100 text-amber-800 mb-3">{{ t('product.translationPending') }}</div>
+        <div v-if="pendingTranslation" class="badge bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300 mb-3">{{ t('product.translationPending') }}</div>
         <h1 class="text-2xl md:text-3xl font-extrabold text-ink-900 leading-tight">{{ tr(product, 'title') }}</h1>
 
         <div class="mt-2 flex items-center gap-2 text-sm text-ink-400">
-          <span class="text-amber-500 font-bold">★ {{ product.rating.toFixed(1) }}</span>
+          <span class="text-amber-500 font-bold">★ {{ Number(product.rating ?? 0).toFixed(1) }}</span>
           <span>·</span>
           <span>{{ t('product.reviews', { n: product.reviews }) }}</span>
           <span>·</span>
@@ -98,7 +104,7 @@ useHead({
             <span class="label">{{ t('product.quantity') }}</span>
             <div class="flex items-center border border-ink-200 rounded-lg overflow-hidden">
               <button class="w-10 h-11 hover:bg-ink-50 font-bold text-ink-500" @click="qty = Math.max(1, qty - 1)">−</button>
-              <input v-model.number="qty" class="w-12 h-11 text-center border-x border-ink-200 focus:outline-none" min="1" max="99" />
+              <input v-model.number="qty" class="w-12 h-11 text-center border-x border-ink-200 focus:outline-none" min="1" max="99" inputmode="numeric" @change="setQty(qty)" @blur="setQty(qty)" />
               <button class="w-10 h-11 hover:bg-ink-50 font-bold text-ink-500" @click="qty = Math.min(99, qty + 1)">+</button>
             </div>
           </div>
@@ -123,7 +129,7 @@ useHead({
             >{{ t('product.shipping') }}</button>
           </div>
           <div class="py-4 text-sm text-ink-600 leading-relaxed">
-            <p v-if="tab === 'description'">{{ desc || '-' }}</p>
+            <p v-if="tab === 'description'">{{ desc || t('product.noDescription') }}</p>
             <template v-else>
               <p>{{ t('product.shippingInfo', { amount: money(50000) }) }}</p>
               <p class="mt-2 text-ink-400">{{ t('product.returns') }}</p>

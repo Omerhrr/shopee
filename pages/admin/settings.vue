@@ -259,7 +259,7 @@ useHead({ title: () => t('admin.settings') })
             <button class="btn-secondary text-sm" :disabled="form.translate_provider === 'none' || testing" @click="runTest">{{ testing ? '…' : t('admin.testTranslation') }}</button>
             <button class="btn-secondary text-sm" :disabled="form.translate_provider === 'none'" @click="runPending">{{ t('admin.runPending') }}</button>
           </div>
-          <p v-if="testResult" class="text-sm rounded-lg px-3 py-2" :class="testResult.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'">
+          <p v-if="testResult" class="text-sm rounded-lg px-3 py-2" :class="testResult.ok ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300'">
             {{ testResult.ok ? `OK (${testResult.provider}): "${testResult.sample}"` : testResult.error }}
           </p>
         </div>

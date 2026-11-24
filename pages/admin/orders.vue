@@ -32,12 +32,12 @@ const detail = ref<AdminOrder | null>(null)
 
 const badge = (s: string) =>
   ({
-    pending: 'bg-amber-100 text-amber-800',
-    paid: 'bg-emerald-50 text-emerald-700',
-    packed: 'bg-sky-50 text-sky-700',
-    shipped: 'bg-sky-100 text-sky-800',
-    delivered: 'bg-emerald-100 text-emerald-800',
-    cancelled: 'bg-rose-50 text-rose-700'
+    pending: 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300',
+    paid: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+    packed: 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
+    shipped: 'bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-300',
+    delivered: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300',
+    cancelled: 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300'
   }[s] || 'bg-ink-100 text-ink-500')
 
 useHead({ title: () => t('admin.orders') })

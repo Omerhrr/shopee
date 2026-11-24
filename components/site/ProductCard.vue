@@ -22,7 +22,7 @@ const add = () => {
       <div class="aspect-square bg-ink-100">
         <SmartImage :src="product.images && product.images.length ? product.images[0] : null" :alt="tr(product, 'title')" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
       </div>
-      <span v-if="pendingTranslation" class="badge bg-amber-100 text-amber-800 absolute top-2 left-2">{{ t('product.translationPending') }}</span>
+      <span v-if="pendingTranslation" class="badge bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300 absolute top-2 left-2">{{ t('product.translationPending') }}</span>
     </NuxtLink>
     <div class="p-4 flex flex-col flex-1">
       <NuxtLink :to="`/products/${product.slug}`" class="text-sm font-semibold text-ink-800 leading-snug hover:text-brand-700 line-clamp-2">

@@ -44,6 +44,7 @@ export default {
     outOfStock: 'Out of stock',
     reviews: '{n} reviews',
     description: 'Description',
+    noDescription: 'The seller has not provided a description for this product yet. Check the images for details, or contact us if you have questions.',
     shipping: 'Shipping & returns',
     shippingInfo: 'Orders are packed in Korea within 1-2 business days. Free shipping on orders over {amount}. Tracked delivery to most regions.',
     returns: '14-day returns on unopened items.',

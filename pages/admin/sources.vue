@@ -100,7 +100,7 @@ const scrapeNow = async (s: AdminSource) => {
 }
 
 const statusBadge = (s: AdminSource) =>
-  s.status === 'ok' ? 'bg-emerald-50 text-emerald-700' : s.status === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-ink-100 text-ink-500'
+  s.status === 'ok' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : s.status === 'error' ? 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300' : 'bg-ink-100 text-ink-500'
 
 useHead({ title: () => t('admin.sources') })
 </script>
@@ -146,7 +146,7 @@ useHead({ title: () => t('admin.sources') })
             <td class="px-3 py-3 text-xs text-ink-500 max-w-[140px] truncate">{{ s.category_hint }}</td>
             <td class="px-3 py-3">
               <div class="flex flex-wrap gap-1">
-                <span v-if="s.paid_membership" class="badge bg-amber-100 text-amber-800 text-[10px]">{{ t('admin.paid') }}</span>
+                <span v-if="s.paid_membership" class="badge bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300 text-[10px]">{{ t('admin.paid') }}</span>
                 <span v-if="s.requires_cafe" class="badge bg-ink-100 text-ink-600 text-[10px]">{{ t('admin.cafe') }}</span>
                 <span v-if="!s.image_provided" class="badge bg-ink-100 text-ink-600 text-[10px]">{{ t('admin.noImg') }}</span>
               </div>

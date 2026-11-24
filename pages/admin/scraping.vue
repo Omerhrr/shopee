@@ -67,7 +67,7 @@ const syncOne = async (s: AdminSource) => {
 }
 
 const statusBadge = (s: AdminSource) =>
-  s.status === 'ok' ? 'bg-emerald-50 text-emerald-700' : s.status === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-ink-100 text-ink-500'
+  s.status === 'ok' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : s.status === 'error' ? 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300' : 'bg-ink-100 text-ink-500'
 
 const fmt = (s: string | null | undefined) => (s ? new Date(s).toLocaleString() : '-')
 
@@ -118,7 +118,7 @@ useHead({ title: () => t('admin.scraping') })
           <div v-for="l in logs" :key="l.id" class="rounded-xl border border-ink-100 p-3 text-sm">
             <div class="flex items-center gap-2 flex-wrap">
               <span class="font-bold text-ink-800">{{ l.source_name }}</span>
-              <span class="badge text-[10px]" :class="l.status === 'ok' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'">{{ l.status }}</span>
+              <span class="badge text-[10px]" :class="l.status === 'ok' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300'">{{ l.status }}</span>
               <span class="badge bg-ink-100 text-ink-500 text-[10px]">{{ l.trigger }}</span>
               <span class="ml-auto text-[11px] text-ink-400">{{ l.started_at ? new Date(l.started_at).toLocaleString() : '' }}</span>
             </div>

@@ -25,8 +25,8 @@ useHead({ title: () => t('order.title', { n: route.params.number as string }) })
     </div>
 
     <div v-else>
-      <div class="card p-6 md:p-8 mb-6 text-center border-emerald-200 bg-emerald-50/40">
-        <div class="w-14 h-14 mx-auto bg-emerald-100 rounded-full flex items-center justify-center mb-3">
+      <div class="card p-6 md:p-8 mb-6 text-center border-emerald-200 bg-emerald-50/40 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+        <div class="w-14 h-14 mx-auto bg-emerald-100 dark:bg-emerald-500/20 rounded-full flex items-center justify-center mb-3">
           <svg style="width:28px;height:28px" fill="none" stroke="#059669" stroke-width="2.5" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7" /></svg>
         </div>
         <h1 class="text-xl md:text-2xl font-extrabold text-ink-900">{{ t('checkout.success') }}</h1>

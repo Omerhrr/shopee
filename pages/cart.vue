@@ -58,7 +58,7 @@ useHead({ title: () => t('cart.title') })
           <span class="text-ink-500">{{ t('cart.shipping') }}</span>
           <span class="font-semibold" :class="shipping === 0 ? 'text-emerald-600' : ''">{{ shipping === 0 ? t('cart.free') : money(shipping) }}</span>
         </div>
-        <p v-if="remaining > 0" class="text-xs bg-amber-50 text-amber-700 rounded-lg px-3 py-2">
+        <p v-if="remaining > 0" class="text-xs bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300 rounded-lg px-3 py-2">
           {{ t('cart.freeShippingHint', { amount: money(remaining) }) }}
         </p>
         <div class="border-t border-ink-100 pt-3 flex justify-between">

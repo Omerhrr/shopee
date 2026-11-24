@@ -10,6 +10,10 @@ const inkShades = ['50', '100', '200', '300', '400', '500', '600', '700', '800',
 const accentShades = ['50', '100', '200', '300', '400', '500', '600', '700', '800', '900']
 
 export default <Partial<Config>>{
+  // Class/attribute based dark mode: the runtime theme engine toggles
+  // <html data-mode="dark"> (composables/useTheme.ts), so components can use
+  // `dark:` variants instead of hardcoding light-only colors.
+  darkMode: ['selector', '[data-mode="dark"]'],
   content: [
     './app.vue',
     './components/**/*.{vue,js,ts}',

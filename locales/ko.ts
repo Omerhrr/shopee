@@ -44,6 +44,7 @@ export default {
     outOfStock: '품절',
     reviews: '리뷰 {n}개',
     description: '상품 설명',
+    noDescription: '판매자가 아직 상품 설명을 등록하지 않았습니다. 자세한 내용은 이미지를 확인해 주세요.',
     shipping: '배송 및 교환',
     shippingInfo: '한국에서 1-2 영업일 내 출고됩니다. {amount} 이상 주문 시 무료 배송. 대부분 지역 배송 추적이 가능합니다.',
     returns: '미개봉 상품에 한해 14일 이내 교환/반품이 가능합니다.',
