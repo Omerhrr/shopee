@@ -24,6 +24,7 @@ from starlette.background import BackgroundTask
 
 from .. import models
 from ..services import media_store
+from ..services.translator import ensure_translated
 from ..database import get_db
 from ..deps import get_current_admin
 
@@ -142,8 +143,13 @@ def _local_image(prod: models.Product) -> tuple[bytes, str] | None:
     return None
 
 
-def build_rows(db: Session, p: ExportParams) -> list[dict]:
+def build_rows(db: Session, p: ExportParams, translate: bool = True) -> list[dict]:
     prods = _filter_query(db, p).all()
+    if translate:
+        try:  # translate missing titles/descriptions into the chosen export language first
+            ensure_translated(db, prods, p.title_lang, budget_s=50, max_items=400)
+        except Exception:
+            db.rollback()
     rows = []
     for prod in prods:
         urls = _image_urls(prod, p.public_base)
@@ -226,7 +232,7 @@ def preview(p: ExportParams = Depends(), db: Session = Depends(get_db)):
         .all()
     )
 
-    rows = build_rows(db, p)
+    rows = build_rows(db, p, translate=False)
     return {
         "total": total,
         "exportable": len(rows),

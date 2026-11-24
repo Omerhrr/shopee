@@ -25,6 +25,7 @@ const load = async () => {
         q: q.value || undefined,
         category: category.value || undefined,
         sort: sort.value,
+        lang: locale.value,
         page: page.value,
         per_page: 24
       }
@@ -49,6 +50,8 @@ watch(q, () => {
   qTimer = setTimeout(() => { page.value = 1; load() }, 350)
 })
 watch([category, sort], () => { page.value = 1; load() })
+// switching EN/KO re-loads the page so names come back in the new language (missing ones are translated)
+watch(locale, () => { item.value = null; load() })
 
 const go = (p: number) => {
   page.value = p
@@ -73,7 +76,7 @@ const download = async () => {
   try {
     const blob: Blob = await api<Blob>('/scraper/package', {
       method: 'POST',
-      body: { product_id: item.value.id, public_base: publicBase },
+      body: { product_id: item.value.id, lang: locale.value, public_base: publicBase },
       responseType: 'blob'
     })
     const link = document.createElement('a')

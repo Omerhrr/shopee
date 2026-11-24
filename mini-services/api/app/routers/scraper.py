@@ -26,6 +26,7 @@ from starlette.background import BackgroundTask
 
 from .. import models
 from ..services import media_store
+from ..services.translator import ensure_translated
 from ..database import get_db
 from ..deps import get_current_admin
 from .admin_export import CSV_HEADERS
@@ -43,6 +44,7 @@ def listings(
     sort: str = "newest",
     page: int = 1,
     per_page: int = 24,
+    lang: str = "",
     db: Session = Depends(get_db),
 ):
     """Browse/search every product stored on this site (any status, any source).
@@ -84,6 +86,11 @@ def listings(
 
     total = query.count()
     rows = query.offset((page - 1) * per_page).limit(per_page).all()
+    if lang in ("en", "ko"):
+        try:  # translate what is missing on THIS page so names always show in the chosen language
+            ensure_translated(db, rows, lang, budget_s=20)
+        except Exception:
+            db.rollback()
     items = []
     for p in rows:
         imgs = [i for i in (p.images or []) if isinstance(i, str) and i.strip()]
@@ -157,6 +164,7 @@ def _local_files(images: list) -> list[tuple[bytes, str]]:
 
 class PackageIn(BaseModel):
     product_id: int
+    lang: str = "en"                  # en | ko
     price_mode: str = "sell"          # sell (retail incl. markup) | cost (wholesale)
     currency: str = "KRW"             # KRW | USD
     usd_rate: float = 1350.0
@@ -177,8 +185,16 @@ def package(body: PackageIn, db: Session = Depends(get_db)):
         raise HTTPException(404, "Product not found")
 
     sku = f"SP-{p.id:06d}"
-    title = (p.title_en or "").strip() or (p.title_ko or "").strip()
-    desc = (p.desc_en or "").strip() or (p.desc_ko or "").strip()
+    try:
+        ensure_translated(db, [p], body.lang, budget_s=20)
+    except Exception:
+        db.rollback()
+    if body.lang == "ko":
+        title = (p.title_ko or "").strip() or (p.title_en or "").strip()
+        desc = (p.desc_ko or "").strip() or (p.desc_en or "").strip()
+    else:
+        title = (p.title_en or "").strip() or (p.title_ko or "").strip()
+        desc = (p.desc_en or "").strip() or (p.desc_ko or "").strip()
     files = _local_files(p.images or [])
     if not files:
         raise HTTPException(422, "No local images available for this listing")
@@ -310,6 +326,10 @@ def package_multi(body: MultiPackageIn, db: Session = Depends(get_db)):
     if len(ids) > MAX_PACKAGE_ITEMS:
         raise HTTPException(400, f"Max {MAX_PACKAGE_ITEMS} listings per download")
     prods = {p.id: p for p in db.query(models.Product).filter(models.Product.id.in_(ids)).all()}
+    try:  # fill the missing language side for the whole batch first (parallel, time boxed)
+        ensure_translated(db, list(prods.values()), body.lang, budget_s=45, max_items=MAX_PACKAGE_ITEMS)
+    except Exception:
+        db.rollback()
 
     cur = body.currency.upper()
     csv_buf = io.StringIO()

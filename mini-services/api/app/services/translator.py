@@ -98,17 +98,27 @@ def _chunks(text: str, size: int = 3000) -> list[str]:
     return out
 
 
-def translate_text(text: str, db: Session | None = None, src: str = "ko", tgt: str = "en") -> str:
-    """Translate src -> tgt (ko/en) with the configured provider. Raises on failure."""
-    provider = get_setting(db, "translate_provider", "none") if db else "none"
+def load_cfg(db: Session) -> dict:
+    return {
+        "provider": get_setting(db, "translate_provider", "none"),
+        "key": get_setting(db, "translate_api_key", ""),
+        "secret": get_setting(db, "translate_api_secret", ""),
+        "host": get_setting(db, "translate_deepl_host", "free"),
+    }
+
+
+def translate_text(text: str, db: Session | None = None, src: str = "ko", tgt: str = "en", cfg: dict | None = None) -> str:
+    """Translate src -> tgt (ko/en) with the configured provider. Raises on failure.
+    Pass cfg (from load_cfg) when calling from worker threads: sessions are not thread-safe."""
+    if cfg is None:
+        cfg = load_cfg(db) if db else {"provider": "none"}
+    provider = cfg.get("provider", "none")
     text = (text or "").strip()
     if not text:
         return ""
     if provider not in ("google_free", "papago", "deepl", "google"):
         raise RuntimeError("No translation provider configured (Admin > Settings > Translation)")
-    key = get_setting(db, "translate_api_key", "")
-    secret = get_setting(db, "translate_api_secret", "")
-    host = get_setting(db, "translate_deepl_host", "free")
+    key, secret, host = cfg.get("key", ""), cfg.get("secret", ""), cfg.get("host", "free")
 
     def one(chunk: str) -> str:
         if provider == "google_free":
@@ -222,3 +232,72 @@ def run_pending_translations(db: Session, limit: int = 25) -> dict:
 
 def pending_count(db: Session) -> int:
     return db.query(models.Product).filter(models.Product.translation_status.in_(("pending", "failed"))).count()
+
+
+def ensure_translated(db: Session, prods: list, lang: str, budget_s: float = 25.0, max_items: int = 300) -> int:
+    """Make sure each product has title/description in `lang` ("en" or "ko") BEFORE it is shown or
+    exported. Missing sides are machine-translated in parallel and saved. Best effort: a failure or
+    the time budget leaves the product untouched (it is retried later). Returns products updated."""
+    import time
+    from concurrent.futures import ThreadPoolExecutor, wait
+
+    if lang not in ("en", "ko"):
+        return 0
+    cfg = load_cfg(db)
+    if cfg["provider"] == "none":
+        return 0
+    other = "ko" if lang == "en" else "en"
+
+    def missing(txt, p=None) -> bool:
+        txt = (txt or "").strip()
+        if not txt:
+            return True
+        # leftover Hangul (untranslatable brand names...) only counts while not yet marked done,
+        # otherwise the same product would be re-translated on every request
+        return lang == "en" and _has_hangul(txt) and not (p is not None and p.translation_status == "done")
+
+    jobs = []  # (product, field, source_text)
+    for p in prods:
+        if len(jobs) >= max_items * 2:
+            break
+        t_have, d_have = getattr(p, f"title_{lang}"), getattr(p, f"desc_{lang}")
+        t_src, d_src = getattr(p, f"title_{other}") or "", getattr(p, f"desc_{other}") or ""
+        if missing(t_have, p) and t_src.strip():
+            jobs.append((p, "title", t_src))
+        if missing(d_have, p) and d_src.strip():
+            jobs.append((p, "desc", d_src))
+    if not jobs:
+        return 0
+
+    started = time.time()
+    results: dict = {}
+    ex = ThreadPoolExecutor(max_workers=8)
+    futs = {ex.submit(translate_text, src_txt, None, other, lang, cfg): (p.id, field) for p, field, src_txt in jobs}
+    done, _ = wait(list(futs), timeout=max(1.0, budget_s - (time.time() - started)))
+    for fu in done:
+        try:
+            results[futs[fu]] = fu.result()
+        except Exception:
+            pass
+    ex.shutdown(wait=False, cancel_futures=True)
+
+    changed = 0
+    for p in prods:
+        touched = False
+        t = results.get((p.id, "title"))
+        d = results.get((p.id, "desc"))
+        if t:
+            setattr(p, f"title_{lang}", t[:290] if lang == "en" else t[:290])
+            touched = True
+        if d:
+            setattr(p, f"desc_{lang}", d)
+            touched = True
+        if touched:
+            ok_t = bool((getattr(p, f"title_{lang}") or "").strip())
+            ok_d = (not (getattr(p, f"desc_{other}") or "").strip()) or bool((getattr(p, f"desc_{lang}") or "").strip())
+            if ok_t and ok_d:
+                p.translation_status = "done"
+            changed += 1
+    if changed:
+        db.commit()
+    return changed
