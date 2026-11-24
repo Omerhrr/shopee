@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from . import models  # noqa: F401 (loads models for table creation)
 from .config import MEDIA_DIR
 from .database import Base, SessionLocal, engine
-from .routers import admin_catalog, admin_finance, admin_settings, admin_sources, auth, catalog, orders
+from .routers import admin_catalog, admin_export, admin_finance, admin_settings, admin_sources, auth, catalog, orders
 from .services.scheduler import start_scheduler
 from .services.seed_service import ensure_seed
 
@@ -42,6 +42,7 @@ app.include_router(admin_catalog.router)
 app.include_router(admin_sources.router)
 app.include_router(admin_settings.router)
 app.include_router(admin_finance.router)
+app.include_router(admin_export.router)
 
 # Scraped images / generated placeholders
 app.mount("/media", StaticFiles(directory=str(MEDIA_DIR)), name="media")

@@ -9,6 +9,7 @@ const links = computed(() => [
   { to: '/admin/products', label: t('admin.products'), icon: 'box' },
   { to: '/admin/sources', label: t('admin.sources'), icon: 'link' },
   { to: '/admin/scraping', label: t('admin.scraping'), icon: 'refresh' },
+  { to: '/admin/export', label: t('admin.export'), icon: 'upload' },
   { to: '/admin/orders', label: t('admin.orders'), icon: 'bag' },
   { to: '/admin/finance', label: t('admin.finance'), icon: 'coin' },
   { to: '/admin/settings', label: t('admin.settings'), icon: 'cog' }
@@ -48,6 +49,7 @@ const isActive = (to: string) => (to === '/admin' ? route.path === '/admin' : ro
             <path v-else-if="l.icon === 'refresh'" d="M21 12a9 9 0 1 1-2.6-6.3M21 4v5h-5" />
             <path v-else-if="l.icon === 'bag'" d="M6 8h12l1 13H5L6 8zM9 8a3 3 0 0 1 6 0" />
             <path v-else-if="l.icon === 'coin'" d="M12 2v20M17 6H9.5a3 3 0 0 0 0 6h5a3 3 0 0 1 0 6H6" />
+            <path v-else-if="l.icon === 'upload'" d="M12 16V4M6 10l6-6 6 6M4 20h16" />
             <path v-else d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
           </svg>
           {{ l.label }}
