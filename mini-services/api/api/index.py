@@ -1,4 +1,4 @@
-"""Vercel entrypoint: exposes the FastAPI app (all routes are rewritten here by vercel.json)."""
+"""Vercel entrypoint: exposes the FastAPI app (path normalisation lives in app.main)."""
 import os
 import sys
 

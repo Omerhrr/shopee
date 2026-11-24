@@ -71,6 +71,36 @@ app.include_router(scraper.router)
 app.include_router(cron.router)
 
 # Scraped images / generated placeholders
+class _PathNormalizer:
+    """Vercel may deliver the rewrite target (/api/index) or a path without the /api prefix.
+    All our routes live under /api/* or /media/*, so normalise before routing."""
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            path = scope.get("path") or "/"
+            if path.startswith("/api/index"):
+                path = path[len("/api/index"):] or "/"
+            if not (path.startswith("/api/") or path == "/api" or path.startswith("/media/")):
+                path = "/api" + (path if path.startswith("/") else "/" + path)
+            scope = dict(scope, path=path, raw_path=path.encode())
+        await self.inner(scope, receive, send)
+
+
+if IS_VERCEL:
+    app.add_middleware(_PathNormalizer)
+    from starlette.requests import Request as _Req
+    from starlette.responses import JSONResponse as _JR
+
+    @app.exception_handler(404)
+    async def _not_found(request: _Req, exc):
+        # diagnostic: shows the path the function actually received
+        detail = getattr(exc, "detail", "Not Found")
+        return _JR({"detail": detail, "seen_path": request.scope.get("path")}, status_code=404)
+
+
 @app.get("/media/{path:path}")
 def media(path: str):
     hit = media_store.load(path)
