@@ -1,0 +1,8 @@
+{
+  "name": "shopee-api",
+  "private": true,
+  "scripts": {
+    "dev": "bash start.sh",
+    "start": "bash start.sh"
+  }
+}
