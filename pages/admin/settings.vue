@@ -25,7 +25,8 @@ const form = reactive({
   translate_provider: 'google_free',
   translate_api_key: '',
   translate_api_secret: '',
-  translate_deepl_host: 'free'
+  translate_deepl_host: 'free',
+  translate_libre_url: ''
 })
 
 watchEffect(() => {
@@ -233,13 +234,19 @@ useHead({ title: () => t('admin.settings') })
             <span class="label">{{ t('admin.provider') }}</span>
             <select v-model="form.translate_provider" class="input">
               <option value="google_free">{{ t('admin.providerFree') }}</option>
+              <option value="edge">{{ t('admin.providerEdge') }}</option>
+              <option value="libre">LibreTranslate</option>
               <option value="papago">Papago (Naver)</option>
               <option value="deepl">DeepL</option>
               <option value="google">Google Cloud Translation</option>
               <option value="none">{{ t('admin.providerNone') }}</option>
             </select>
           </div>
-          <div v-if="form.translate_provider !== 'none' && form.translate_provider !== 'google_free'">
+          <div v-if="form.translate_provider === 'libre'">
+            <span class="label">LibreTranslate URL</span>
+            <input v-model="form.translate_libre_url" class="input" placeholder="https://your-libretranslate-server.com" />
+          </div>
+          <div v-if="!['none', 'google_free', 'edge'].includes(form.translate_provider)">
             <span class="label">{{ t('admin.apiKey') }}</span>
             <input v-model="form.translate_api_key" class="input" :placeholder="form.translate_provider === 'papago' ? 'X-NCP-APIGW-API-KEY-ID' : 'key'" />
           </div>
@@ -255,7 +262,7 @@ useHead({ title: () => t('admin.settings') })
             </select>
           </div>
           <div class="flex flex-wrap gap-2">
-            <button class="btn-primary text-sm" :disabled="form.translate_provider === 'none'" @click="saveSettings({ translate_provider: form.translate_provider, translate_api_key: form.translate_api_key, translate_api_secret: form.translate_api_secret, translate_deepl_host: form.translate_deepl_host })">{{ t('admin.save') }}</button>
+            <button class="btn-primary text-sm" :disabled="form.translate_provider === 'none'" @click="saveSettings({ translate_provider: form.translate_provider, translate_api_key: form.translate_api_key, translate_api_secret: form.translate_api_secret, translate_deepl_host: form.translate_deepl_host, translate_libre_url: form.translate_libre_url })">{{ t('admin.save') }}</button>
             <button class="btn-secondary text-sm" :disabled="form.translate_provider === 'none' || testing" @click="runTest">{{ testing ? '…' : t('admin.testTranslation') }}</button>
             <button class="btn-secondary text-sm" :disabled="form.translate_provider === 'none'" @click="runPending">{{ t('admin.runPending') }}</button>
           </div>

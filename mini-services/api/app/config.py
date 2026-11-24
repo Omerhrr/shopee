@@ -74,6 +74,7 @@ DEFAULT_SETTINGS = {
     "translate_api_key": "",
     "translate_api_secret": "",  # Papago client secret
     "translate_deepl_host": "free",  # free | pro
+    "translate_libre_url": "",        # LibreTranslate server, e.g. https://libretranslate.example.com
     # Theme management (Admin > Settings > Theme)
     "theme_primary": "#EA580C",   # brand color, full palette is derived from it
     "theme_accent": "#F59E0B",    # highlight color (topbar, hero, bullets)

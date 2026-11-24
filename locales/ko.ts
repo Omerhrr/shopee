@@ -264,6 +264,7 @@ export default {
     provider: '번역 엔진',
     providerNone: '사용 안 함 (한국어 원문 표시)',
     providerFree: '구글 번역 (무료, API 키 불필요)',
+    providerEdge: '마이크로소프트 번역 (무료, API 키 불필요, 권장)',
     apiKey: 'API 키',
     apiSecret: 'API 시크릿 (파파고)',
     deeplHost: 'DeepL 계정 (free/pro)',

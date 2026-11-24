@@ -15,7 +15,7 @@ EDITABLE_KEYS = {
     "site_name", "currency", "default_locale", "markup_percent", "shipping_flat",
     "free_shipping_threshold", "scrape_enabled", "scrape_interval_minutes",
     "scrape_max_products_per_run", "translate_provider", "translate_api_key",
-    "translate_api_secret", "translate_deepl_host",
+    "translate_api_secret", "translate_deepl_host", "translate_libre_url",
     "theme_primary", "theme_accent", "theme_radius", "theme_dark_default",
     "fonts_family", "fonts_heading", "fonts_base_size", "fonts_heading_weight",
 }

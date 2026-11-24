@@ -271,6 +271,7 @@ export default {
     provider: 'Provider',
     providerNone: 'None (show original Korean)',
     providerFree: 'Google Translate (free, no API key)',
+    providerEdge: 'Microsoft Translator (free, no API key, recommended)',
     apiKey: 'API key',
     apiSecret: 'API secret (Papago)',
     deeplHost: 'DeepL account (free/pro)',

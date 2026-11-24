@@ -27,14 +27,34 @@ def sanitize_dashes(text: str) -> str:
     return (text or "").replace("\u2014", "-").replace("\u2013", "-")
 
 
+_blocked_until = 0.0  # circuit breaker: after a 429 stop hammering the free endpoint for a while
+
+
+class RateLimited(RuntimeError):
+    pass
+
+
 def _google_free(text: str, src: str = "ko", tgt: str = "en") -> str:
-    """Public Google Translate web endpoint - no API key needed. Best-effort."""
-    r = httpx.get(
-        "https://translate.googleapis.com/translate_a/single",
-        params={"client": "gtx", "sl": src, "tl": tgt, "dt": "t", "q": text[:4500]},
-        headers={"User-Agent": UA, "Accept-Language": "en;q=0.9"},
-        timeout=TIMEOUT,
-    )
+    """Public Google Translate web endpoint - no API key needed. Best-effort, shared IPs get 429."""
+    import time
+
+    global _blocked_until
+    if time.time() < _blocked_until:
+        raise RateLimited("Google free translate is rate limiting this server (429). Add a Papago, DeepL or Google API key in Admin > Settings > Translation.")
+    r = None
+    for attempt in range(3):
+        r = httpx.get(
+            "https://translate.googleapis.com/translate_a/single",
+            params={"client": "gtx", "sl": src, "tl": tgt, "dt": "t", "q": text[:4500]},
+            headers={"User-Agent": UA, "Accept-Language": "en;q=0.9"},
+            timeout=TIMEOUT,
+        )
+        if r.status_code not in (429, 503):
+            break
+        time.sleep(1.5 * (attempt + 1))
+    if r.status_code == 429:
+        _blocked_until = time.time() + 90
+        raise RateLimited("Google free translate returned 429 Too Many Requests. Add a Papago, DeepL or Google API key in Admin > Settings > Translation.")
     r.raise_for_status()
     data = r.json()
     out = ""
@@ -42,6 +62,44 @@ def _google_free(text: str, src: str = "ko", tgt: str = "en") -> str:
         if seg and seg[0]:
             out += seg[0]
     return sanitize_dashes(out.strip())
+
+
+_edge_token_cache = {"token": "", "exp": 0.0}
+
+
+def _edge(text: str, src: str = "ko", tgt: str = "en") -> str:
+    """Microsoft Translator through the public Edge-browser endpoint: no account, no key.
+    (Unofficial but long-stable; a token is fetched from edge.microsoft.com and cached.)"""
+    import time
+
+    if not _edge_token_cache["token"] or time.time() > _edge_token_cache["exp"]:
+        tr = httpx.get("https://edge.microsoft.com/translate/auth", headers={"User-Agent": UA}, timeout=TIMEOUT)
+        tr.raise_for_status()
+        _edge_token_cache.update(token=tr.text.strip(), exp=time.time() + 8 * 60)
+    r = httpx.post(
+        "https://api-edge.cognitive.microsofttranslator.com/translate",
+        params={"from": src, "to": tgt, "api-version": "3.0"},
+        headers={"Authorization": f"Bearer {_edge_token_cache['token']}", "User-Agent": UA},
+        json=[{"Text": text}],
+        timeout=TIMEOUT,
+    )
+    if r.status_code == 401:  # token expired early: refresh once
+        _edge_token_cache["exp"] = 0
+        raise RuntimeError("Microsoft token rejected, retry")
+    r.raise_for_status()
+    return sanitize_dashes(r.json()[0]["translations"][0]["text"].strip())
+
+
+def _libre(text: str, url: str, key: str = "", src: str = "ko", tgt: str = "en") -> str:
+    """LibreTranslate (self-hosted, or any public instance that does not need a key)."""
+    if not url:
+        raise RuntimeError("LibreTranslate server URL is empty (Admin > Settings > Translation)")
+    payload = {"q": text, "source": src, "target": tgt, "format": "text"}
+    if key:
+        payload["api_key"] = key
+    r = httpx.post(url.rstrip("/") + "/translate", json=payload, timeout=TIMEOUT)
+    r.raise_for_status()
+    return sanitize_dashes(r.json()["translatedText"].strip())
 
 
 def _papago(text: str, key: str, secret: str, src: str = "ko", tgt: str = "en") -> str:
@@ -104,6 +162,7 @@ def load_cfg(db: Session) -> dict:
         "key": get_setting(db, "translate_api_key", ""),
         "secret": get_setting(db, "translate_api_secret", ""),
         "host": get_setting(db, "translate_deepl_host", "free"),
+        "libre_url": get_setting(db, "translate_libre_url", ""),
     }
 
 
@@ -116,19 +175,32 @@ def translate_text(text: str, db: Session | None = None, src: str = "ko", tgt: s
     text = (text or "").strip()
     if not text:
         return ""
-    if provider not in ("google_free", "papago", "deepl", "google"):
+    if provider not in ("google_free", "edge", "libre", "papago", "deepl", "google"):
         raise RuntimeError("No translation provider configured (Admin > Settings > Translation)")
     key, secret, host = cfg.get("key", ""), cfg.get("secret", ""), cfg.get("host", "free")
 
     def one(chunk: str) -> str:
         if provider == "google_free":
-            return _google_free(chunk, src, tgt)
+            # Google's free endpoint 429s on shared hosts like Vercel: fall back to Microsoft automatically
+            try:
+                return _google_free(chunk, src, tgt)
+            except Exception:
+                return _edge(chunk, src, tgt)
+        if provider == "edge":
+            try:
+                return _edge(chunk, src, tgt)
+            except Exception:
+                return _google_free(chunk, src, tgt)
+        if provider == "libre":
+            return _libre(chunk, cfg.get("libre_url", ""), key, src, tgt)
         if provider == "papago":
             return _papago(chunk, key, secret, src, tgt)
         if provider == "deepl":
             return _deepl(chunk, key, host, src, tgt)
         return _google(chunk, key, src, tgt)
 
+    if len(text) <= 3000:
+        return one(text)  # keeps newlines intact (used for batched titles)
     return " ".join(one(c) for c in _chunks(text))
 
 
@@ -234,6 +306,19 @@ def pending_count(db: Session) -> int:
     return db.query(models.Product).filter(models.Product.translation_status.in_(("pending", "failed"))).count()
 
 
+def _translate_batch(texts: list[str], src: str, tgt: str, cfg: dict) -> list[str]:
+    """Translate several short texts in ONE request (newline separated). If the provider changes
+    the line count, fall back to one request per text so titles never get mixed up."""
+    flat = [" ".join(t.split()) for t in texts]
+    if len(flat) == 1:
+        return [translate_text(flat[0], None, src, tgt, cfg)]
+    joined = translate_text("\n".join(flat), None, src, tgt, cfg)
+    lines = [ln.strip() for ln in joined.split("\n")]
+    if len(lines) == len(flat) and all(lines):
+        return lines
+    return [translate_text(t, None, src, tgt, cfg) for t in flat]
+
+
 def ensure_translated(db: Session, prods: list, lang: str, budget_s: float = 25.0, max_items: int = 300) -> int:
     """Make sure each product has title/description in `lang` ("en" or "ko") BEFORE it is shown or
     exported. Missing sides are machine-translated in parallel and saved. Best effort: a failure or
@@ -271,14 +356,29 @@ def ensure_translated(db: Session, prods: list, lang: str, budget_s: float = 25.
 
     started = time.time()
     results: dict = {}
-    ex = ThreadPoolExecutor(max_workers=8)
-    futs = {ex.submit(translate_text, src_txt, None, other, lang, cfg): (p.id, field) for p, field, src_txt in jobs}
+    ex = ThreadPoolExecutor(max_workers=3)  # gentle: free endpoints rate-limit hard
+    futs = {}
+    # titles are short: send up to 15 per request (one per line) and split the answer back
+    titles = [(p.id, txt) for p, field, txt in jobs if field == "title"]
+    for i in range(0, len(titles), 15):
+        group = titles[i:i + 15]
+        futs[ex.submit(_translate_batch, [t for _, t in group], other, lang, cfg)] = ("batch", [pid for pid, _ in group])
+    for p, field, src_txt in jobs:
+        if field == "desc":
+            futs[ex.submit(translate_text, src_txt, None, other, lang, cfg)] = (p.id, "desc")
     done, _ = wait(list(futs), timeout=max(1.0, budget_s - (time.time() - started)))
     for fu in done:
+        key = futs[fu]
         try:
-            results[futs[fu]] = fu.result()
+            res = fu.result()
         except Exception:
-            pass
+            continue
+        if key[0] == "batch":
+            for pid, txt in zip(key[1], res):
+                if txt:
+                    results[(pid, "title")] = txt
+        else:
+            results[key] = res
     ex.shutdown(wait=False, cancel_futures=True)
 
     changed = 0
