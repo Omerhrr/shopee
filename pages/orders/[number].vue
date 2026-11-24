@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { t } = useI18n()
+const { t, tr } = useI18n()
 const money = useMoney()
 const api = useApi()
 const route = useRoute()
@@ -60,10 +60,10 @@ useHead({ title: () => t('order.title', { n: route.params.number as string }) })
         <div class="divide-y divide-ink-100">
           <div v-for="i in order.items" :key="i.id" class="py-3 flex gap-4 items-center">
             <div class="w-14 h-14 rounded-lg overflow-hidden bg-ink-100 shrink-0">
-              <SmartImage :src="i.image || null" :alt="i.title_en || i.title_ko" />
+              <SmartImage :src="i.image || null" :alt="tr(i, 'title')" />
             </div>
             <div class="flex-1 min-w-0">
-              <div class="font-semibold text-sm line-clamp-1">{{ i.title_en || i.title_ko }}</div>
+              <div class="font-semibold text-sm line-clamp-1">{{ tr(i, 'title') }}</div>
               <div class="text-xs text-ink-400">{{ money(i.unit_sell) }} × {{ i.quantity }}</div>
             </div>
             <div class="font-bold text-sm">{{ money(i.unit_sell * i.quantity) }}</div>

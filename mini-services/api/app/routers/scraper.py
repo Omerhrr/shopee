@@ -103,6 +103,7 @@ def listings(
                 "status": p.status,
                 "translation_status": p.translation_status,
                 "source_name": p.source.name if p.source else "",
+                "source_name_en": ((p.source.config or {}).get("name_en") or p.source.name) if p.source else "",
                 "source_enabled": bool(p.source.enabled) if p.source else False,
                 "source_url": p.source_url or "",
             }
@@ -215,7 +216,7 @@ def package(body: PackageIn, db: Session = Depends(get_db)):
     w.writerow(CSV_HEADERS)
     w.writerow([
         "", data["title"], data["desc"], price, max(1, int(body.stock)), data["sku"], "",
-        *imgs, body.weight_g, body.length_cm, body.width_cm, body.height_cm,
+        *imgs, body.weight_g, body.length_cm, body.width_cm, body.height_cm, data["source_url"],
     ])
     csv_bytes = b"\xef\xbb\xbf" + csv_buf.getvalue().encode("utf-8")
 
@@ -255,4 +256,118 @@ def package(body: PackageIn, db: Session = Depends(get_db)):
         media_type="application/zip",
         filename=f"shopee_listing_{data['sku']}.zip",
         background=BackgroundTask(os.unlink, tmp.name),
+    )
+
+
+# ---------------------------------------------------------------- bulk selection
+MAX_IDS = 5000          # "select all results" cap
+MAX_PACKAGE_ITEMS = 150  # products per ZIP (memory / time limits on serverless hosts)
+
+
+def _filtered_query(db: Session, q: str, category: str):
+    query = db.query(models.Product)
+    if category:
+        cat = db.query(models.Category).filter(models.Category.slug == category).first()
+        if cat:
+            query = query.filter(models.Product.category_id == cat.id)
+    for word in [w for w in re.split(r"\s+", (q or "").strip()) if w]:
+        like = f"%{word}%"
+        query = query.filter(
+            or_(models.Product.title_en.ilike(like), models.Product.title_ko.ilike(like), models.Product.slug.ilike(like))
+        )
+    return query
+
+
+@router.get("/ids")
+def listing_ids(q: str = "", category: str = "", db: Session = Depends(get_db)):
+    """Ids of EVERY listing matching the current search/category (for 'select all results')."""
+    rows = _filtered_query(db, q, category).order_by(models.Product.created_at.desc()).limit(MAX_IDS + 1).all()
+    ids = [p.id for p in rows[:MAX_IDS]]
+    return {"ids": ids, "total": len(ids), "capped": len(rows) > MAX_IDS}
+
+
+class MultiPackageIn(BaseModel):
+    product_ids: list[int]
+    lang: str = "en"                  # en | ko : which title/description goes in the CSV
+    price_mode: str = "sell"
+    currency: str = "KRW"
+    usd_rate: float = 1350.0
+    stock: int = 10
+    weight_g: int = 500
+    length_cm: float = 25
+    width_cm: float = 20
+    height_cm: float = 10
+    public_base: str = "http://localhost:3000"
+
+
+@router.post("/package-multi")
+def package_multi(body: MultiPackageIn, db: Session = Depends(get_db)):
+    """Several listings in ONE ZIP: combined shopee CSV (one row each), listings.txt,
+    images/<SKU>_<n>.ext. Items without a usable stored image are listed in skipped.txt."""
+    ids = list(dict.fromkeys(body.product_ids))
+    if not ids:
+        raise HTTPException(400, "Nothing selected")
+    if len(ids) > MAX_PACKAGE_ITEMS:
+        raise HTTPException(400, f"Max {MAX_PACKAGE_ITEMS} listings per download")
+    prods = {p.id: p for p in db.query(models.Product).filter(models.Product.id.in_(ids)).all()}
+
+    cur = body.currency.upper()
+    csv_buf = io.StringIO()
+    w = csv.writer(csv_buf)
+    w.writerow(CSV_HEADERS)
+    txt, skipped, files = [], [], []
+    for pid in ids:
+        p = prods.get(pid)
+        if not p:
+            skipped.append(f"id {pid}: not found")
+            continue
+        sku = f"SP-{p.id:06d}"
+        imgs_local = _local_files(p.images or [])
+        if not imgs_local:
+            skipped.append(f"{sku}: no usable stored image")
+            continue
+        if body.lang == "ko":
+            title = (p.title_ko or "").strip() or (p.title_en or "").strip()
+            desc = (p.desc_ko or "").strip() or (p.desc_en or "").strip()
+        else:
+            title = (p.title_en or "").strip() or (p.title_ko or "").strip()
+            desc = (p.desc_en or "").strip() or (p.desc_ko or "").strip()
+        title, desc = title[:255], " ".join(desc.split())[:3000]
+        base = p.price_sell if body.price_mode == "sell" else p.price_cost
+        price = round(base / body.usd_rate, 2) if (cur == "USD" and body.usd_rate > 0) else base
+        urls = []
+        for img in p.images or []:
+            if isinstance(img, str) and img.strip():
+                u = img.strip()
+                urls.append(u if u.startswith(("http://", "https://")) else body.public_base.rstrip("/") + "/" + u.lstrip("/"))
+            if len(urls) >= 5:
+                break
+        urls += [""] * (5 - len(urls))
+        w.writerow(["", title, desc, price, max(1, int(body.stock)), sku, "", *urls,
+                    body.weight_g, body.length_cm, body.width_cm, body.height_cm, p.source_url or ""])
+        txt.append(f"{sku} | {title}\n  price {price} {cur} | cost KRW {p.price_cost:,} | {p.source_url or '(catalog item)'}\n")
+        for i, (blob, ext) in enumerate(imgs_local, start=1):
+            files.append((f"images/{sku}_{i}{ext}", blob))
+
+    if not files:
+        raise HTTPException(422, "None of the selected listings has a usable stored image")
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+    tmp.close()
+    from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
+
+    with ZipFile(tmp.name, "w") as z:
+        z.writestr("shopee_listings.csv", b"\xef\xbb\xbf" + csv_buf.getvalue().encode("utf-8"), compress_type=ZIP_DEFLATED)
+        z.writestr("listings.txt", f"SHOPEE LISTINGS ({len(txt)})  generated {date.today().isoformat()}\n\n" + "\n".join(txt), compress_type=ZIP_DEFLATED)
+        if skipped:
+            z.writestr("skipped.txt", "\n".join(skipped), compress_type=ZIP_DEFLATED)
+        for name, blob in files:
+            z.writestr(name, blob, compress_type=ZIP_STORED)
+
+    return FileResponse(
+        tmp.name,
+        media_type="application/zip",
+        filename=f"shopee_listings_{len(txt)}_items.zip",
+        background=BackgroundTask(os.unlink, tmp.name),
+        headers={"X-Skipped": str(len(skipped)), "Access-Control-Expose-Headers": "X-Skipped"},
     )

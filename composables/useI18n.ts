@@ -34,13 +34,19 @@ export function useI18n() {
     return obj[key] || obj[fallback] || obj[fallback2] || ''
   }
 
+  /** Supplier/source labels: English mode shows the translated name, Korean mode the original. */
+  const srcLabel = (obj: any, field = 'name'): string => {
+    if (!obj) return ''
+    return locale.value === 'en' ? obj[`${field}_en`] || obj[field] || '' : obj[field] || ''
+  }
+
   const setLocale = (l: Locale) => {
     locale.value = l
     useCookie<Locale>('locale').value = l
     if (import.meta.client) document.documentElement.lang = l
   }
 
-  return { locale, t, tr, setLocale }
+  return { locale, t, tr, srcLabel, setLocale }
 }
 
 export function useMoney() {

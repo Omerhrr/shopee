@@ -2,7 +2,7 @@
 import type { ScrapeLogRow, AdminSource } from '~~/types/checkout'
 
 definePageMeta({ layout: 'admin' })
-const { t } = useI18n()
+const { t, srcLabel } = useI18n()
 const adminApi = useAdminApi()
 const toast = useToastState()
 
@@ -117,7 +117,7 @@ useHead({ title: () => t('admin.scraping') })
         <div v-else class="space-y-2.5 max-h-96 overflow-y-auto scroll-thin pr-1">
           <div v-for="l in logs" :key="l.id" class="rounded-xl border border-ink-100 p-3 text-sm">
             <div class="flex items-center gap-2 flex-wrap">
-              <span class="font-bold text-ink-800">{{ l.source_name }}</span>
+              <span class="font-bold text-ink-800">{{ srcLabel(l, 'source_name') }}</span>
               <span class="badge text-[10px]" :class="l.status === 'ok' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300'">{{ l.status }}</span>
               <span class="badge bg-ink-100 text-ink-500 text-[10px]">{{ l.trigger }}</span>
               <span class="ml-auto text-[11px] text-ink-400">{{ l.started_at ? new Date(l.started_at).toLocaleString() : '' }}</span>
@@ -151,7 +151,7 @@ useHead({ title: () => t('admin.scraping') })
           </thead>
           <tbody class="divide-y divide-ink-50">
             <tr v-for="s in enabledSources" :key="s.id" class="hover:bg-ink-50/50">
-              <td class="px-3 py-2.5 font-semibold text-ink-800">{{ s.name }}</td>
+              <td class="px-3 py-2.5 font-semibold text-ink-800">{{ srcLabel(s) }}</td>
               <td class="px-3 py-2.5">
                 <span class="badge text-[10px]" :class="statusBadge(s)">{{ s.status }}</span>
               </td>

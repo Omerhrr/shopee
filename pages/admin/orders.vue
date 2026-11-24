@@ -2,7 +2,7 @@
 import type { AdminOrder } from '~~/types/checkout'
 
 definePageMeta({ layout: 'admin' })
-const { t } = useI18n()
+const { t, tr } = useI18n()
 const money = useMoney()
 const adminApi = useAdminApi()
 const toast = useToastState()
@@ -113,7 +113,7 @@ useHead({ title: () => t('admin.orders') })
               <img v-if="i.image" :src="i.image" :alt="i.title_en" class="w-full h-full object-cover" />
             </div>
             <div class="flex-1 min-w-0">
-              <div class="font-semibold line-clamp-1">{{ i.title_en || i.title_ko }}</div>
+              <div class="font-semibold line-clamp-1">{{ tr(i, 'title') }}</div>
               <div class="text-xs text-ink-400">{{ money(i.unit_sell) }} × {{ i.quantity }} (cost {{ money(i.unit_cost) }})</div>
             </div>
             <div class="font-bold">{{ money(i.unit_sell * i.quantity) }}</div>

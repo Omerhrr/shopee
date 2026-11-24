@@ -24,6 +24,7 @@ from .. import models
 from . import media_store
 from .markup import apply_pricing
 from .translator import pending_count as _pc  # noqa: F401 (used by admin)
+from .translator import translate_product, translate_source_labels
 from ..deps import get_setting
 
 UA = (
@@ -428,6 +429,12 @@ def scrape_source(db: Session, source: models.Source, trigger: str = "manual", d
                 db.add(p)
                 db.commit()
                 new_count += 1
+                try:  # best effort: English text is ready immediately; failures retry later
+                    if not deadline or time.time() < deadline - 20:
+                        translate_product(db, p)
+                        db.commit()
+                except Exception:
+                    db.rollback()
             except Exception as e:
                 db.rollback()
                 errors.append(f"{url[:80]}: {str(e)[:120]}")
@@ -459,6 +466,10 @@ def scrape_source(db: Session, source: models.Source, trigger: str = "manual", d
 
     log.finished_at = datetime.now(timezone.utc)
     db.commit()
+    try:
+        translate_source_labels(db, limit=1)
+    except Exception:
+        db.rollback()
     return log
 
 

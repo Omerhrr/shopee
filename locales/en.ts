@@ -118,6 +118,7 @@ export default {
     rights: '© {year} Shopee. All products sourced from Korean wholesale suppliers.'
   },
   admin: {
+    manual: 'Manual',
     login: 'Admin login',
     email: 'Email',
     password: 'Password',
@@ -328,6 +329,16 @@ export default {
     exportCompliance: 'these listings were scraped from Korean wholesale sites. Only list products you are authorized to resell — Shopee removes listings that violate image or brand IP rules, and repeated strikes can suspend the shop.'
   },
   scraper: {
+    selectPage: 'Select page',
+    unselectPage: 'Unselect page',
+    selectAll: 'Select all {n} results',
+    clearSel: 'Clear selection',
+    selectedN: '{n} selected',
+    downloadSelected: 'Download selected ({n})',
+    downloadingProgress: 'Downloading part {i} of {n}…',
+    selectAllLoading: 'Selecting…',
+    skippedN: '{n} skipped (no usable stored image)',
+    pick: 'Tick to select',
     title: 'Scraper',
     subtitle: 'Everything this site has already scraped, in one place. Pick any listing and download it Shopee-ready - price, description and images matched by Item SKU - to post it on shopee.kr while API access is pending.',
     searchPlaceholder: 'Search all listings on this site…',

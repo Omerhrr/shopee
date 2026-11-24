@@ -2,7 +2,7 @@
 import type { AdminSource, AdminCategory } from '~~/types/checkout'
 
 definePageMeta({ layout: 'admin' })
-const { t, locale } = useI18n()
+const { t, locale, srcLabel } = useI18n()
 const adminApi = useAdminApi()
 const toast = useToastState()
 
@@ -136,14 +136,14 @@ useHead({ title: () => t('admin.sources') })
         <tbody class="divide-y divide-ink-50">
           <tr v-for="s in sources || []" :key="s.id" class="hover:bg-ink-50/50">
             <td class="px-4 py-3">
-              <div class="font-semibold text-ink-800">{{ s.name }}</div>
+              <div class="font-semibold text-ink-800">{{ srcLabel(s) }}</div>
               <div class="text-xs text-ink-400">{{ t('admin.productCount', { n: s.product_count }) }}</div>
             </td>
             <td class="px-3 py-3">
               <a v-if="s.url" :href="s.url" target="_blank" rel="noopener" class="text-xs text-ink-500 hover:text-brand-700 max-w-[180px] truncate block">{{ s.url }}</a>
               <span v-else class="text-xs text-ink-300">-</span>
             </td>
-            <td class="px-3 py-3 text-xs text-ink-500 max-w-[140px] truncate">{{ s.category_hint }}</td>
+            <td class="px-3 py-3 text-xs text-ink-500 max-w-[140px] truncate">{{ srcLabel(s, 'category_hint') }}</td>
             <td class="px-3 py-3">
               <div class="flex flex-wrap gap-1">
                 <span v-if="s.paid_membership" class="badge bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300 text-[10px]">{{ t('admin.paid') }}</span>

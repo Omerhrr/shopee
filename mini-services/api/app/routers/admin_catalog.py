@@ -167,7 +167,9 @@ def create_product(body: ProductIn, db: Session = Depends(get_db)):
         reviews=body.reviews,
         is_manual=True,
         original_lang="ko" if body.title_ko and not body.title_en else "en",
-        translation_status="done" if (body.title_en or not body.title_ko) else "pending",
+        # one language missing -> translate the other side automatically
+        translation_status="done" if (body.title_en and body.title_ko and
+                                      (not (body.desc_ko or body.desc_en) or (body.desc_ko and body.desc_en))) else "pending",
     )
     apply_pricing(db, p)
     db.add(p)
@@ -201,8 +203,14 @@ def update_product(pid: int, body: ProductIn, db: Session = Depends(get_db)):
     p.stock_status = body.stock_status
     p.rating = body.rating
     p.reviews = body.reviews
-    if body.title_en:
-        p.translation_status = "done"
+    # a side left empty (or a description present in only one language) gets auto-translated
+    both_titles = bool(body.title_en and body.title_ko)
+    both_desc = (not (body.desc_ko or body.desc_en)) or bool(body.desc_ko and body.desc_en)
+    p.translation_status = "done" if (both_titles and both_desc) else "pending"
+    if not body.title_en and body.title_ko:
+        p.original_lang = "ko"
+    elif body.title_en and not body.title_ko:
+        p.original_lang = "en"
     apply_pricing(db, p)
     db.commit()
     return product_admin(p)
@@ -224,6 +232,11 @@ def retranslate(pid: int, db: Session = Depends(get_db)):
     if not p:
         raise HTTPException(404, "Not found")
     p.translation_status = "pending"
+    # explicit retranslate: redo the machine-translated side
+    if p.original_lang == "en":
+        p.title_ko, p.desc_ko = "", ""
+    else:
+        p.title_en, p.desc_en = None, None
     db.commit()
     try:
         translate_product(db, p)

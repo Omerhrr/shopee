@@ -160,9 +160,11 @@ def scrape_logs(limit: int = 50, db: Session = Depends(get_db)):
         .limit(limit)
         .all()
     )
+    en_names = {s.id: (s.config or {}).get("name_en") for s in db.query(models.Source).all()}
     return [
         {
-            "id": l.id, "source_name": l.source_name, "trigger": l.trigger, "status": l.status,
+            "id": l.id, "source_name": l.source_name,
+            "source_name_en": en_names.get(l.source_id) or l.source_name, "trigger": l.trigger, "status": l.status,
             "new_products": l.new_products, "updated_products": l.updated_products,
             "message": l.message, "started_at": l.started_at.isoformat() if l.started_at else None,
         }

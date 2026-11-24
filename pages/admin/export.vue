@@ -2,7 +2,7 @@
 import type { AdminSource, AdminCategory } from '~~/types/checkout'
 
 definePageMeta({ layout: 'admin' })
-const { t, locale } = useI18n()
+const { t, locale, srcLabel } = useI18n()
 const adminApi = useAdminApi()
 const toast = useToastState()
 
@@ -116,7 +116,7 @@ useHead({ title: () => t('admin.export') })
           <span class="label">{{ t('admin.source') }}</span>
           <select v-model.number="sourceId" class="input">
             <option :value="null">{{ t('products.all') }}</option>
-            <option v-for="s in sources || []" :key="s.id" :value="s.id">{{ s.name }} ({{ s.product_count }})</option>
+            <option v-for="s in sources || []" :key="s.id" :value="s.id">{{ srcLabel(s) }} ({{ s.product_count }})</option>
           </select>
         </div>
         <div>

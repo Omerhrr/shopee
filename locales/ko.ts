@@ -118,6 +118,7 @@ export default {
     rights: '© {year} Shopee. 모든 상품은 한국 도매사에서 공급됩니다.'
   },
   admin: {
+    manual: '수동',
     login: '관리자 로그인',
     email: '이메일',
     password: '비밀번호',
@@ -320,6 +321,16 @@ export default {
     exportCompliance: '상품은 한국 도매 사이트에서 수집되었습니다. 판매 승인을 받은 상품만 등록하세요. 이미지·브랜드 IP 규정 위반 상품은 쇼피에서 삭제되며 반복 위반 시 계정이 정지될 수 있습니다.'
   },
   scraper: {
+    selectPage: '현재 페이지 선택',
+    unselectPage: '현재 페이지 해제',
+    selectAll: '검색 결과 {n}개 전체 선택',
+    clearSel: '선택 해제',
+    selectedN: '{n}개 선택됨',
+    downloadSelected: '선택 항목 다운로드 ({n})',
+    downloadingProgress: '{n}개 중 {i}번째 파일 다운로드 중…',
+    selectAllLoading: '선택 중…',
+    skippedN: '{n}개 제외됨 (사용 가능한 저장 이미지 없음)',
+    pick: '체크하여 선택',
     title: '스크래퍼',
     subtitle: '이 사이트가 수집한 모든 상품을 한 곳에서 관리합니다. 상품을 선택해 쇼피 등록용 패키지(가격·설명·Item SKU별 이미지)를 내려받으면 API 승인 전에도 shopee.kr에 바로 등록할 수 있습니다.',
     searchPlaceholder: '사이트에 수집된 전체 상품 검색…',

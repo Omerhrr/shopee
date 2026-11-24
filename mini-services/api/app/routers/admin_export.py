@@ -165,6 +165,7 @@ def build_rows(db: Session, p: ExportParams) -> list[dict]:
                 "category_en": cat.name_en if cat else "",
                 "category_ko": cat.name_ko if cat else "",
                 "source": prod.source.name if prod.source else "",
+                "source_url": prod.source_url or "",
             }
         )
     return rows
@@ -174,6 +175,7 @@ CSV_HEADERS = [
     "Category ID", "Product Name", "Description", "Price", "Stock", "Item SKU", "Logistics",
     *(f"Product Image URL {i}" for i in range(1, MAX_IMAGES + 1)),
     "Weight (g)", "Package Length (cm)", "Package Width (cm)", "Package Height (cm)",
+    "Source Product URL",  # original supplier page of the exact product (extra column, last)
 ]
 
 
@@ -197,6 +199,7 @@ def _to_csv_bytes(rows: list[dict], p: ExportParams) -> bytes:
                 p.length_cm,
                 p.width_cm,
                 p.height_cm,
+                r["source_url"],
             ]
         )
     return b"\xef\xbb\xbf" + buf.getvalue().encode("utf-8")  # BOM so Excel opens Korean text correctly

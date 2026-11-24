@@ -23,8 +23,12 @@ const submit = async () => {
     useCookie<string | null>('shopee_admin_token').value = res.access_token
     const to = String(route.query.redirect || '')
     navigateTo(to.startsWith('/') && !to.startsWith('//') ? to : '/admin')
-  } catch {
-    error.value = t('admin.loginError')
+  } catch (e: any) {
+    const status = e?.response?.status || e?.status
+    // Only a real 401/400 from the API means bad credentials; anything else is a connection problem
+    error.value = status === 401 || status === 400
+      ? t('admin.loginError')
+      : `Cannot reach the API (${status || 'network/CORS error'}). Check NUXT_PUBLIC_API_BASE and SHOPEE_CORS_ORIGINS.`
   } finally {
     busy.value = false
   }

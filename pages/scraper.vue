@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { t, tr } = useI18n()
+const { t, tr, srcLabel, locale } = useI18n()
 const api = useAdminApi()
 const publicBase = useRequestURL().origin
 const toast = useToastState()
@@ -88,14 +88,79 @@ const download = async () => {
   }
 }
 
+// ---- multi-select (kept across pages and searches) ----
+const selectedIds = ref<Set<number>>(new Set())
+const selCount = computed(() => selectedIds.value.size)
+const isSel = (id: number) => selectedIds.value.has(id)
+const toggleSel = (id: number) => {
+  const s = new Set(selectedIds.value)
+  s.has(id) ? s.delete(id) : s.add(id)
+  selectedIds.value = s
+}
+const pageAllSelected = computed(() => items.value.length > 0 && items.value.every((p: any) => isSel(p.id)))
+const togglePage = () => {
+  const s = new Set(selectedIds.value)
+  if (pageAllSelected.value) items.value.forEach((p: any) => s.delete(p.id))
+  else items.value.forEach((p: any) => s.add(p.id))
+  selectedIds.value = s
+}
+const selectingAll = ref(false)
+const selectAllResults = async () => {
+  selectingAll.value = true
+  try {
+    const r = await api<any>('/scraper/ids', { params: { q: q.value || undefined, category: category.value || undefined } })
+    const s = new Set(selectedIds.value)
+    ;(r.ids || []).forEach((i: number) => s.add(i))
+    selectedIds.value = s
+  } catch (e: any) {
+    toast(e?.data?.detail || t('admin.error'))
+  } finally {
+    selectingAll.value = false
+  }
+}
+const clearSel = () => { selectedIds.value = new Set() }
+
+const BATCH = 100
+const bulkBusy = ref(false)
+const bulkProgress = ref('')
+const downloadSelected = async () => {
+  const ids = [...selectedIds.value]
+  if (!ids.length) return
+  bulkBusy.value = true
+  const parts = Math.ceil(ids.length / BATCH)
+  let skipped = 0
+  try {
+    for (let i = 0; i < parts; i++) {
+      bulkProgress.value = t('scraper.downloadingProgress', { i: i + 1, n: parts })
+      const blob: Blob = await api<Blob>('/scraper/package-multi', {
+        method: 'POST',
+        body: { product_ids: ids.slice(i * BATCH, (i + 1) * BATCH), lang: locale.value, public_base: publicBase },
+        responseType: 'blob'
+      })
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = `shopee_listings_part${i + 1}of${parts}.zip`
+      link.click()
+      URL.revokeObjectURL(link.href)
+      await new Promise((r) => setTimeout(r, 400))
+    }
+  } catch (e: any) {
+    toast(e?.data?.detail || e?.response?._data?.detail || t('admin.error'))
+  } finally {
+    bulkBusy.value = false
+    bulkProgress.value = ''
+  }
+}
+
 const copy = async (text: string) => {
   if (!text) return
   await navigator.clipboard.writeText(text)
   toast(t('scraper.copied'))
 }
 
-const titleOf = (it: any) => it.title_en || it.title_ko || ''
-const descOf = (it: any) => it.desc_en || it.desc_ko || ''
+// each language shows its own text (translated side is filled automatically; other side only as fallback)
+const titleOf = (it: any) => (locale.value === 'ko' ? it.title_ko || it.title_en : it.title_en || it.title_ko) || ''
+const descOf = (it: any) => (locale.value === 'ko' ? it.desc_ko || it.desc_en : it.desc_en || it.desc_ko) || ''
 const thumbs = (it: any) => (it.images || []).filter((i: string) => typeof i === 'string' && i.trim()).slice(0, 8)
 
 useHead({ title: () => t('scraper.title') })
@@ -149,13 +214,28 @@ useHead({ title: () => t('scraper.title') })
           </div>
         </div>
 
-        <p class="text-sm text-ink-400 mb-4">{{ t('scraper.resultsCount', { n: total.toLocaleString() }) }}</p>
+        <p class="text-sm text-ink-400 mb-3">{{ t('scraper.resultsCount', { n: total.toLocaleString() }) }}</p>
+
+        <!-- bulk selection bar -->
+        <div class="flex flex-wrap items-center gap-2 mb-4">
+          <button class="btn-secondary text-xs !py-2" :disabled="!items.length" @click="togglePage">
+            {{ pageAllSelected ? t('scraper.unselectPage') : t('scraper.selectPage') }}
+          </button>
+          <button class="btn-secondary text-xs !py-2" :disabled="!total || selectingAll" @click="selectAllResults">
+            {{ selectingAll ? t('scraper.selectAllLoading') : t('scraper.selectAll', { n: total.toLocaleString() }) }}
+          </button>
+          <button v-if="selCount" class="btn-ghost text-xs" @click="clearSel">{{ t('scraper.clearSel') }}</button>
+          <span v-if="selCount" class="badge bg-brand-600 text-white">{{ t('scraper.selectedN', { n: selCount.toLocaleString() }) }}</span>
+          <button v-if="selCount" class="btn-primary text-xs !py-2 ml-auto" :disabled="bulkBusy" @click="downloadSelected">
+            {{ bulkBusy ? bulkProgress || '…' : t('scraper.downloadSelected', { n: selCount.toLocaleString() }) }}
+          </button>
+        </div>
 
         <!-- selected listing: download panel -->
         <div v-if="item" ref="previewEl" class="card p-5 mb-6">
           <div class="flex flex-wrap items-center gap-2 mb-3">
             <span class="badge bg-ink-100 text-ink-600 font-mono">{{ item.sku }}</span>
-            <span v-if="item.source_name" class="badge bg-ink-100 text-ink-500 text-[10px]">{{ item.source_name }}</span>
+            <span v-if="item.source_name" class="badge bg-ink-100 text-ink-500 text-[10px]">{{ srcLabel(item, 'source_name') }}</span>
             <span v-if="item.status !== 'published'" class="badge bg-amber-100 text-amber-700 text-[10px]">{{ t('scraper.statusDraft') }}</span>
             <button class="text-xs text-ink-400 hover:text-brand-700 underline decoration-dotted underline-offset-2 ml-auto" @click="item = null">{{ t('scraper.clear') }}</button>
             <a v-if="item.source_url" :href="item.source_url" target="_blank" rel="noopener" class="text-xs text-ink-400 hover:text-brand-700 underline decoration-dotted underline-offset-2 max-w-[280px] truncate">{{ t('scraper.source') }}</a>
@@ -189,11 +269,17 @@ useHead({ title: () => t('scraper.title') })
         <div v-if="loading && !loadedOnce" class="text-ink-400 py-16 text-center">{{ t('products.loading') }}</div>
         <div v-else-if="loadedOnce && !items.length" class="text-ink-400 py-16 text-center">{{ t('scraper.noResults') }}</div>
         <div v-else class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div v-for="p in items" :key="p.id" class="relative">
+          <label
+            class="absolute top-2 left-2 z-10 w-7 h-7 rounded-md bg-white/95 border border-ink-200 shadow flex items-center justify-center cursor-pointer"
+            :title="t('scraper.pick')"
+            @click.stop
+          >
+            <input type="checkbox" class="w-4 h-4 accent-brand-600 cursor-pointer" :checked="isSel(p.id)" :aria-label="t('scraper.pick')" @change="toggleSel(p.id)" />
+          </label>
           <button
-            v-for="p in items"
-            :key="p.id"
-            class="card overflow-hidden group flex flex-col text-left hover:shadow-pop transition"
-            :class="item?.id === p.id ? 'ring-2 ring-brand-500' : ''"
+            class="card overflow-hidden group flex flex-col text-left hover:shadow-pop transition w-full h-full"
+            :class="[item?.id === p.id ? 'ring-2 ring-brand-500' : '', isSel(p.id) ? 'ring-2 ring-brand-400' : '']"
             @click="pick(p)"
           >
             <div class="relative overflow-hidden">
@@ -205,8 +291,8 @@ useHead({ title: () => t('scraper.title') })
                   class="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                 />
               </div>
-              <span v-if="p.status !== 'published'" class="badge bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300 absolute top-2 left-2">{{ t('scraper.statusDraft') }}</span>
-              <span v-else-if="!p.source_enabled" class="badge bg-ink-100 text-ink-500 absolute top-2 left-2">{{ t('scraper.sourceOff') }}</span>
+              <span v-if="p.status !== 'published'" class="badge bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300 absolute top-2 left-11">{{ t('scraper.statusDraft') }}</span>
+              <span v-else-if="!p.source_enabled" class="badge bg-ink-100 text-ink-500 absolute top-2 left-11">{{ t('scraper.sourceOff') }}</span>
               <span v-if="item?.id === p.id" class="badge bg-brand-600 text-white absolute top-2 right-2">{{ t('scraper.selected') }}</span>
             </div>
             <div class="p-4 flex flex-col flex-1">
@@ -222,6 +308,7 @@ useHead({ title: () => t('scraper.title') })
               </div>
             </div>
           </button>
+          </div>
         </div>
 
         <PaginationNav :page="page" :pages="pages" @go="go" />
