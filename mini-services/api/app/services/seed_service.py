@@ -31,15 +31,29 @@ def seed_settings(db: Session):
 
 
 def seed_admin(db: Session):
-    if not db.query(models.User).filter(models.User.email == SEED_ADMIN_EMAIL).first():
-        db.add(
-            models.User(
-                email=SEED_ADMIN_EMAIL,
-                password_hash=hash_password(SEED_ADMIN_PASSWORD),
-                role="admin",
-            )
-        )
+    """Create the admin once. Emails are stored lower-case (login lower-cases what you type).
+
+    Forgot / never applied the env password? Set SHOPEE_ADMIN_RESET=1 (plus SHOPEE_ADMIN_EMAIL and
+    SHOPEE_ADMIN_PASSWORD), redeploy once, log in, then remove SHOPEE_ADMIN_RESET.
+    """
+    import os
+
+    from ..security import verify_password
+
+    email = SEED_ADMIN_EMAIL.strip().lower()
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if not user:
+        db.add(models.User(email=email, password_hash=hash_password(SEED_ADMIN_PASSWORD), role="admin"))
         db.commit()
+    elif os.getenv("SHOPEE_ADMIN_RESET") == "1" and not verify_password(SEED_ADMIN_PASSWORD, user.password_hash):
+        user.password_hash = hash_password(SEED_ADMIN_PASSWORD)
+        user.role = "admin"
+        db.commit()
+    # repair rows created before emails were lower-cased
+    for u in db.query(models.User).all():
+        if u.email != u.email.strip().lower():
+            u.email = u.email.strip().lower()
+    db.commit()
 
 
 def seed_categories(db: Session):
