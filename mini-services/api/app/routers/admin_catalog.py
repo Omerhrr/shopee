@@ -8,7 +8,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from .. import models
-from ..config import MEDIA_DIR
+from ..services import media_store
 from ..database import get_db
 from ..deps import get_current_admin
 from ..serializers import product_admin
@@ -18,7 +18,6 @@ from ..services.translator import translate_product
 
 router = APIRouter(prefix="/api/admin", tags=["admin-catalog"], dependencies=[Depends(get_current_admin)])
 
-UPLOADS_DIR = MEDIA_DIR / "uploads"
 IMG_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
@@ -27,7 +26,6 @@ IMG_UA = (
 
 def _save_image_bytes(data: bytes, content_type: str) -> str:
     """Store image bytes under /media/uploads and return its public URL."""
-    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     ext = "jpg"
     if "png" in content_type:
         ext = "png"
@@ -38,8 +36,7 @@ def _save_image_bytes(data: bytes, content_type: str) -> str:
     elif "svg" in content_type:
         ext = "svg"
     name = hashlib.md5(data).hexdigest()[:16] + "." + ext
-    (UPLOADS_DIR / name).write_bytes(data)
-    return f"/media/uploads/{name}"
+    return media_store.save(f"uploads/{name}", data, content_type.split(";")[0] or None)
 
 
 @router.post("/upload-image")
@@ -136,6 +133,7 @@ def list_products(
 def create_product(body: ProductIn, db: Session = Depends(get_db)):
     if not body.title_ko and not body.title_en:
         raise HTTPException(400, "Title is required")
+    body.title_ko, body.title_en = body.title_ko[:290], body.title_en[:290]
     seed = (body.title_en or body.title_ko)
     h = hashlib.md5((seed + str(body.price_cost)).encode()).hexdigest()[:6]
     slug = ("".join(ch for ch in seed.lower() if ch.isalnum() or ch in " -").strip().replace(" ", "-")[:80] or "item") + "-" + h
@@ -150,14 +148,8 @@ def create_product(body: ProductIn, db: Session = Depends(get_db)):
     if not images:
         cat = db.query(models.Category).filter(models.Category.id == body.category_id).first()
         cat_slug = cat.slug if cat else "general"
-        seed_dir = MEDIA_DIR / "seed"
-        seed_dir.mkdir(parents=True, exist_ok=True)
-        fname = f"manual-{h}.svg"
-        (seed_dir / fname).write_text(
-            _svg_placeholder(slug, body.title_ko or body.title_en, body.title_en or body.title_ko, "MANUAL", cat_slug),
-            encoding="utf-8",
-        )
-        images = [f"/media/seed/{fname}"]
+        svg = _svg_placeholder(slug, body.title_ko or body.title_en, body.title_en or body.title_ko, "MANUAL", cat_slug)
+        images = [media_store.save(f"seed/manual-{h}.svg", svg.encode("utf-8"), "image/svg+xml")]
 
     p = models.Product(
         slug=slug,
@@ -196,8 +188,8 @@ def update_product(pid: int, body: ProductIn, db: Session = Depends(get_db)):
     p = db.query(models.Product).filter(models.Product.id == pid).first()
     if not p:
         raise HTTPException(404, "Not found")
-    p.title_ko = body.title_ko
-    p.title_en = body.title_en or None
+    p.title_ko = body.title_ko[:290]
+    p.title_en = body.title_en[:290] or None
     p.desc_ko = body.desc_ko
     p.desc_en = body.desc_en or None
     p.price_cost = body.price_cost

@@ -3,26 +3,46 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi import HTTPException
+from fastapi.responses import Response
 
 from . import models  # noqa: F401 (loads models for table creation)
-from .config import MEDIA_DIR
+from .config import IS_VERCEL
+from .services import media_store
 from .database import Base, SessionLocal, engine
-from .routers import admin_catalog, admin_export, admin_finance, admin_settings, admin_sources, auth, catalog, orders, scraper
+from .routers import admin_catalog, admin_export, admin_finance, admin_settings, admin_sources, auth, catalog, cron, orders, scraper
 from .services.scheduler import start_scheduler
 from .services.seed_service import ensure_seed
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+_initialised = False
+
+
+def init_app():
+    """Create tables + idempotent seed (settings, admin, categories, sources)."""
+    global _initialised
+    if _initialised:
+        return
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        ensure_seed(db)  # idempotent: settings, admin user, categories, 114 sources, demo catalog
+        ensure_seed(db)
     finally:
         db.close()
-    start_scheduler()
+    _initialised = True
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_app()
+    if not IS_VERCEL:  # serverless: Vercel Cron calls /api/cron/run instead
+        start_scheduler()
     yield
+
+
+if IS_VERCEL:
+    # Serverless runtimes may not run the ASGI lifespan: initialise on cold start.
+    init_app()
 
 
 app = FastAPI(title="Shopee Dropshipping API", version="1.0.0", lifespan=lifespan)
@@ -48,9 +68,16 @@ app.include_router(admin_settings.router)
 app.include_router(admin_finance.router)
 app.include_router(admin_export.router)
 app.include_router(scraper.router)
+app.include_router(cron.router)
 
 # Scraped images / generated placeholders
-app.mount("/media", StaticFiles(directory=str(MEDIA_DIR)), name="media")
+@app.get("/media/{path:path}")
+def media(path: str):
+    hit = media_store.load(path)
+    if not hit:
+        raise HTTPException(404, "Not found")
+    data, ctype = hit
+    return Response(data, media_type=ctype, headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/api/health")

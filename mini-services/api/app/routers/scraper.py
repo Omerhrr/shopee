@@ -16,7 +16,6 @@ import os
 import re
 import tempfile
 from datetime import date
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -26,7 +25,7 @@ from sqlalchemy.orm import Session, joinedload
 from starlette.background import BackgroundTask
 
 from .. import models
-from ..config import MEDIA_DIR
+from ..services import media_store
 from ..database import get_db
 from ..deps import get_current_admin
 from .admin_export import CSV_HEADERS
@@ -135,22 +134,23 @@ def categories(db: Session = Depends(get_db)):
     return out
 
 
-def _local_files(images: list) -> list[Path]:
-    out: list[Path] = []
+def _local_files(images: list) -> list[tuple[bytes, str]]:
+    """Stored images -> [(bytes, ext)], de-duplicated, only Shopee-friendly formats."""
+    out: list[tuple[bytes, str]] = []
     seen: set[str] = set()
     for e in images or []:
         if not isinstance(e, str) or not e.strip() or e.startswith(("http://", "https://")):
             continue
-        rel = e.strip().lstrip("/")
-        if rel.startswith("media/"):
-            rel = rel[len("media/"):]
-        p = MEDIA_DIR / rel
-        rp = str(p.resolve())
-        if rp in seen:
+        rel = media_store.clean_rel(e)
+        if rel in seen:
             continue
-        seen.add(rp)
-        if p.is_file() and p.stat().st_size > 512 and p.suffix.lower() in ALLOWED_EXT:
-            out.append(p)
+        seen.add(rel)
+        ext = os.path.splitext(rel)[1].lower()
+        if ext not in ALLOWED_EXT:
+            continue
+        hit = media_store.load(rel)
+        if hit and len(hit[0]) > 512:
+            out.append((hit[0], ".jpg" if ext == ".jpeg" else ext))
     return out
 
 
@@ -247,9 +247,8 @@ def package(body: PackageIn, db: Session = Depends(get_db)):
     with ZipFile(tmp.name, "w") as z:
         z.writestr("listing.txt", listing_txt, compress_type=ZIP_DEFLATED)
         z.writestr("shopee_listing.csv", csv_bytes, compress_type=ZIP_DEFLATED)
-        for i, f in enumerate(data["files"], start=1):
-            ext = ".jpg" if f.suffix.lower() == ".jpeg" else f.suffix.lower()
-            z.write(f, f"images/{data['sku']}_{i}{ext}", compress_type=ZIP_STORED)
+        for i, (blob, ext) in enumerate(data["files"], start=1):
+            z.writestr(f"images/{data['sku']}_{i}{ext}", blob, compress_type=ZIP_STORED)
 
     return FileResponse(
         tmp.name,

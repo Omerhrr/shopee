@@ -5,6 +5,9 @@ from sqlalchemy.orm import Session
 
 from .. import models
 from ..database import get_db
+import time
+
+from ..config import IS_VERCEL
 from ..deps import get_current_admin, get_setting, set_setting
 from ..serializers import source_admin
 from ..services.scraper import collect_product_urls, extract_product, fetch_html, scrape_all_enabled, scrape_source, make_client
@@ -112,14 +115,14 @@ def scrape_now(sid: int, db: Session = Depends(get_db)):
     s = db.query(models.Source).filter(models.Source.id == sid).first()
     if not s:
         raise HTTPException(404, "Not found")
-    log = scrape_source(db, s, trigger="manual")
+    log = scrape_source(db, s, trigger="manual", deadline=(time.time() + 240) if IS_VERCEL else None)
     return {"ok": log.status == "ok", "status": log.status, "new": log.new_products,
             "updated": log.updated_products, "message": log.message}
 
 
 @router.post("/scrape/run-all")
 def scrape_run_all(db: Session = Depends(get_db)):
-    results = scrape_all_enabled(db, trigger="manual")
+    results = scrape_all_enabled(db, trigger="manual", deadline=(time.time() + 240) if IS_VERCEL else None)
     return {"ok": True, "results": results}
 
 

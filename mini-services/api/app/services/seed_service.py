@@ -6,8 +6,9 @@ import json
 from sqlalchemy.orm import Session
 
 from .. import models
-from ..config import DEFAULT_SETTINGS, MEDIA_DIR, SEED_ADMIN_EMAIL, SEED_ADMIN_PASSWORD, SEED_DIR
+from ..config import DEFAULT_SETTINGS, SEED_ADMIN_EMAIL, SEED_ADMIN_PASSWORD, SEED_DIR
 from ..security import hash_password
+from . import media_store
 from .markup import apply_pricing
 from seed import demo_data
 
@@ -129,17 +130,15 @@ def _svg_placeholder(slug: str, title_ko: str, title_en: str, code: str, cat_slu
 def seed_demo_products(db: Session):
     if db.query(models.Product).count() > 0:
         return 0
-    seed_dir = MEDIA_DIR / "seed"
-    seed_dir.mkdir(parents=True, exist_ok=True)
     cat_by_slug = {c.slug: c for c in db.query(models.Category).all()}
     added = 0
     for item in demo_data.PRODUCTS:
         cat = cat_by_slug.get(item["cat"])
         slug = f'{item["cat"]}-{item["code"].lower()}-{hashlib.md5(item["title_ko"].encode()).hexdigest()[:6]}'
-        fname = f"{slug}.svg"
-        (seed_dir / fname).write_text(
-            _svg_placeholder(slug, item["title_ko"], item["title_en"], item["code"], item["cat"]),
-            encoding="utf-8",
+        img_url = media_store.save(
+            f"seed/{slug}.svg",
+            _svg_placeholder(slug, item["title_ko"], item["title_en"], item["code"], item["cat"]).encode("utf-8"),
+            "image/svg+xml",
         )
         p = models.Product(
             slug=slug,
@@ -148,7 +147,7 @@ def seed_demo_products(db: Session):
             desc_ko=item["desc_ko"],
             desc_en=item["desc_en"],
             price_cost=item["cost"],
-            images=[f"/media/seed/{fname}"],
+            images=[img_url],
             status="published",
             original_lang="ko",
             translation_status="done",

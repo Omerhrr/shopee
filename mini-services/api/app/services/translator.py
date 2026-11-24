@@ -118,7 +118,7 @@ def translate_product(db: Session, p: models.Product) -> bool:
     desc = translate_text(p.desc_ko or "", db)
     if not title:
         raise RuntimeError("empty translation result")
-    p.title_en = title
+    p.title_en = title[:290]
     p.desc_en = desc or None
     p.translation_status = "done"
     return True

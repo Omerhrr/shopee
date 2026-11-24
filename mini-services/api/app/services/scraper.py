@@ -21,7 +21,7 @@ from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 
 from .. import models
-from ..config import SCRAPED_DIR
+from . import media_store
 from .markup import apply_pricing
 from .translator import pending_count as _pc  # noqa: F401 (used by admin)
 from ..deps import get_setting
@@ -302,8 +302,6 @@ def download_images(client: httpx.Client, urls: list[str], source_id: int, retri
     """Download images to local storage. Every returned URL is guaranteed to be a
     local /media/... path so the storefront never depends on remote hosts."""
     saved = []
-    folder = SCRAPED_DIR / str(source_id)
-    folder.mkdir(parents=True, exist_ok=True)
     for u in urls[:3]:
         if not u:
             continue
@@ -314,9 +312,7 @@ def download_images(client: httpx.Client, urls: list[str], source_id: int, retri
                 if r.status_code == 200 and ct.startswith("image") and len(r.content) > 1024:
                     name = hashlib.md5(u.encode()).hexdigest()[:16]
                     ext = "jpg" if "jpeg" in ct or "jpg" in ct else ("png" if "png" in ct else "webp")
-                    path = folder / f"{name}.{ext}"
-                    path.write_bytes(r.content)
-                    saved.append(f"/media/scraped/{source_id}/{name}.{ext}")
+                    saved.append(media_store.save(f"scraped/{source_id}/{name}.{ext}", r.content, ct.split(";")[0]))
                     break
             except Exception:
                 if attempt < retries:
@@ -327,18 +323,11 @@ def download_images(client: httpx.Client, urls: list[str], source_id: int, retri
 
 def make_placeholder_image(source_id: int, title: str, title_en: str, cat_slug: str) -> str:
     """Generate a local SVG placeholder so scraped products always have a working image."""
-    from ..config import MEDIA_DIR
     from .seed_service import _svg_placeholder
 
-    folder = MEDIA_DIR / "scraped" / str(source_id)
-    folder.mkdir(parents=True, exist_ok=True)
     h = hashlib.md5(title.encode()).hexdigest()[:10]
-    fname = f"ph-{h}.svg"
-    (folder / fname).write_text(
-        _svg_placeholder(f"src-{source_id}-{h}", title[:30], (title_en or title)[:40], "NEW", cat_slug or "general"),
-        encoding="utf-8",
-    )
-    return f"/media/scraped/{source_id}/{fname}"
+    svg = _svg_placeholder(f"src-{source_id}-{h}", title[:30], (title_en or title)[:40], "NEW", cat_slug or "general")
+    return media_store.save(f"scraped/{source_id}/ph-{h}.svg", svg.encode("utf-8"), "image/svg+xml")
 
 
 def slugify(text: str) -> str:
@@ -356,7 +345,8 @@ def unique_slug(db: Session, base: str, seed: str) -> str:
     return slug
 
 
-def scrape_source(db: Session, source: models.Source, trigger: str = "manual") -> models.ScrapeLog:
+def scrape_source(db: Session, source: models.Source, trigger: str = "manual", deadline: float | None = None) -> models.ScrapeLog:
+    """deadline: epoch seconds after which no new product pages are fetched (serverless time limit)."""
     log = models.ScrapeLog(
         source_id=source.id, source_name=source.name, trigger=trigger, status="ok", started_at=datetime.now(timezone.utc)
     )
@@ -390,6 +380,9 @@ def scrape_source(db: Session, source: models.Source, trigger: str = "manual") -
             cat = db.query(models.Category).filter(models.Category.id == int(category_id)).first()
             cat_slug = cat.slug if cat else "general"
         for url in product_urls:
+            if deadline and time.time() > deadline:
+                errors.append("time budget reached, remaining pages left for the next run")
+                break
             try:
                 time.sleep(random.uniform(0.4, 1.2))  # be polite
                 page = fetch_html(client, url)
@@ -472,7 +465,7 @@ def scrape_source(db: Session, source: models.Source, trigger: str = "manual") -
 _scrape_lock = threading.Lock()
 
 
-def scrape_all_enabled(db: Session, trigger: str = "schedule") -> list[dict]:
+def scrape_all_enabled(db: Session, trigger: str = "schedule", deadline: float | None = None) -> list[dict]:
     """Scrape every enabled source. Guarded by a lock so overlapping triggers
     (manual run + schedule) never double-scrape the same sites."""
     if not _scrape_lock.acquire(blocking=False):
@@ -480,8 +473,17 @@ def scrape_all_enabled(db: Session, trigger: str = "schedule") -> list[dict]:
                  "message": "a scrape run is already in progress"}]
     try:
         results = []
-        for src in db.query(models.Source).filter(models.Source.enabled == True).all():  # noqa: E712
-            log = scrape_source(db, src, trigger=trigger)
+        # least recently scraped first, so a time-limited run rotates through all sources
+        srcs = (
+            db.query(models.Source)
+            .filter(models.Source.enabled == True)  # noqa: E712
+            .order_by(models.Source.last_scraped_at.asc().nullsfirst())
+            .all()
+        )
+        for src in srcs:
+            if deadline and time.time() > deadline:
+                break
+            log = scrape_source(db, src, trigger=trigger, deadline=deadline)
             results.append({"source": src.name, "status": log.status, "new": log.new_products, "updated": log.updated_products})
         return results
     finally:

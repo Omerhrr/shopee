@@ -1,22 +1,34 @@
-# Deploying
+# Deploying on Vercel (two projects, one repo)
 
-Vercel hosts the Nuxt site only. The FastAPI backend (SQLite DB, scraper, scheduler,
-downloaded images) needs a host with a persistent disk (Render, Railway, Fly.io, a VPS).
-Vercel serverless has no writable persistent storage and cannot run the background scheduler.
+Vercel's filesystem is read-only (except /tmp) and there is no always-on process, so the backend
+runs in "serverless mode" automatically (detected via the `VERCEL` env var):
+- database: Postgres (Neon / Vercel Postgres / Supabase), NOT SQLite
+- images: stored in the database (table `media_files`), served from `/media/...`
+- scheduler: replaced by Vercel Cron (`/api/cron/run`, daily 03:00 UTC; Hobby plan allows daily only)
 
-## 1. Backend (mini-services/api)
-Use the included `Dockerfile`; mount persistent disks at `/app/data` and `/app/media`.
+## 1. API project  (Root Directory: `mini-services/api`)
+Vercel detects `api/index.py` + `vercel.json` (all paths rewritten to the FastAPI app).
 Environment variables:
-- `SHOPEE_SECRET_KEY`  long random string (required for stable admin sessions)
-- `SHOPEE_ADMIN_EMAIL` / `SHOPEE_ADMIN_PASSWORD`  first admin account (change the defaults!)
-- `SHOPEE_CORS_ORIGINS`  e.g. `https://your-site.vercel.app` (only needed for direct browser calls)
-Health check: `GET /api/health`.
+| name | value |
+|---|---|
+| `DATABASE_URL` (or `SHOPEE_DATABASE_URL`) | Postgres connection string (use the pooled one) |
+| `SHOPEE_SECRET_KEY` | long random string (required) |
+| `SHOPEE_ADMIN_EMAIL` / `SHOPEE_ADMIN_PASSWORD` | first admin account, change the defaults |
+| `CRON_SECRET` | random string; Vercel sends it to the cron route as a Bearer token |
+| `SHOPEE_CORS_ORIGINS` | your site URL, e.g. `https://your-site.vercel.app` |
+Tables and seed data are created on the first cold start. Check `GET /api/health`.
 
-## 2. Vercel
-Import the repo (framework: Nuxt, bun detected). Environment variables:
-- `NUXT_API_INTERNAL` = `https://your-backend-host`   (no trailing slash, no /api)
-- `NUXT_PUBLIC_API_BASE` = `https://your-backend-host/api`   (optional, recommended: big
-  ZIP downloads then bypass Vercel's ~4.5 MB function response limit; also set CORS above)
+Limits to know: functions stop at 300 s, so scrape runs are time-boxed (240 s) and rotate through the
+least-recently-scraped sources. Large image ZIP exports build in memory.
 
-## 3. Routes
-`/` redirects to `/scraper` (admin login required). Storefront is still at `/products`.
+## 2. Site project  (Root Directory: repo root)
+| name | value |
+|---|---|
+| `NUXT_API_INTERNAL` | `https://<api-project>.vercel.app` (no trailing slash, no /api) |
+| `NUXT_PUBLIC_API_BASE` | `https://<api-project>.vercel.app/api` (browser calls the API directly: avoids the 4.5 MB proxy limit on ZIP downloads) |
+
+`/` redirects to `/scraper` (admin login required). Storefront stays at `/products`.
+
+## Local development
+Unchanged: `bun run dev` (starts the API automatically, SQLite + images on disk).
+Other hosts with a persistent disk can use `mini-services/api/Dockerfile` instead.

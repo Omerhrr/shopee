@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session, joinedload
 from starlette.background import BackgroundTask
 
 from .. import models
-from ..config import MEDIA_DIR
+from ..services import media_store
 from ..database import get_db
 from ..deps import get_current_admin
 
@@ -125,8 +125,8 @@ def _needs_translation(prod: models.Product, lang: str) -> bool:
     return lang == "en" and not (prod.title_en or "").strip()
 
 
-def _local_image_path(prod: models.Product) -> tuple[str, str] | None:
-    """First local image (under /media) with a Shopee-friendly extension -> (abs_path, ext)."""
+def _local_image(prod: models.Product) -> tuple[bytes, str] | None:
+    """First stored image (under /media) with a Shopee-friendly extension -> (bytes, ext)."""
     for img in (prod.images or []):
         if not isinstance(img, str):
             continue
@@ -136,12 +136,9 @@ def _local_image_path(prod: models.Product) -> tuple[str, str] | None:
         ext = os.path.splitext(u)[1].lower()
         if ext not in ALLOWED_IMG_EXT:
             continue
-        rel = u.lstrip("/")
-        if rel.startswith("media/"):
-            rel = rel[len("media/"):]
-        path = MEDIA_DIR / rel
-        if path.is_file() and path.stat().st_size > 512:
-            return str(path), ".jpg" if ext == ".jpeg" else ext
+        hit = media_store.load(u)
+        if hit and len(hit[0]) > 512:
+            return hit[0], ".jpg" if ext == ".jpeg" else ext
     return None
 
 
@@ -271,15 +268,12 @@ def export_images_zip(p: ExportParams = Depends(), db: Session = Depends(get_db)
         for prod in prods:
             if added >= MAX_ZIP_FILES:
                 break
-            hit = _local_image_path(prod)
+            hit = _local_image(prod)
             if not hit:
                 continue
-            path, ext = hit
-            try:
-                z.write(path, f"{f'SP-{prod.id:06d}'}{ext}")
-                added += 1
-            except OSError:
-                continue
+            blob, ext = hit
+            z.writestr(f"SP-{prod.id:06d}{ext}", blob)
+            added += 1
     stamp = datetime.now().strftime("%Y%m%d")
     return FileResponse(
         tmp.name,

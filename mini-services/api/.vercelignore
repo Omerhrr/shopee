@@ -1,0 +1,6 @@
+data
+media
+.venv
+Dockerfile
+start.sh
+start.bat

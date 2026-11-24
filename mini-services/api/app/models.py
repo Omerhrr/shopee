@@ -1,7 +1,7 @@
 """Database models - Shopee dropshipping platform."""
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -164,3 +164,14 @@ class OrderItem(Base):
     quantity: Mapped[int] = mapped_column(Integer, default=1)
 
     order: Mapped["Order"] = relationship(back_populates="items")
+
+
+class MediaFile(Base):
+    """Image bytes kept in the database when the host has no persistent disk (Vercel)."""
+
+    __tablename__ = "media_files"
+
+    path: Mapped[str] = mapped_column(String(400), primary_key=True)  # e.g. scraped/12/abc.jpg
+    content_type: Mapped[str] = mapped_column(String(80), default="application/octet-stream")
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
