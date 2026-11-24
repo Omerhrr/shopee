@@ -8,7 +8,8 @@ export function useApi() {
   const config = useRuntimeConfig()
   const internal = import.meta.server ? (config.apiInternal || 'http://127.0.0.1:8000') : ''
   return function api<T = any>(path: string, opts: any = {}): Promise<T> {
-    const url = import.meta.server ? internal + '/api' + path : '/api' + path
+    const base = (config.public.apiBase as string) || '/api'
+    const url = import.meta.server ? internal + '/api' + path : base.replace(/\/$/, '') + path
     return $fetch<T>(url, opts) as Promise<T>
   }
 }

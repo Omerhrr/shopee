@@ -25,6 +25,10 @@ def apply_pricing(db, product) -> int:
     from ..deps import get_setting
 
     global_pct = float(get_setting(db, "markup_percent", 35.0))
+    return apply_pricing_with(product, global_pct)
+
+
+def apply_pricing_with(product, global_pct: float) -> int:
     category = product.category
     pct = resolve_markup(product, category, global_pct)
     product.price_sell = compute_sell_price(product.price_cost, pct)
@@ -32,15 +36,18 @@ def apply_pricing(db, product) -> int:
 
 
 def reapply_all(db, category_id: int | None = None) -> int:
-    from . import models
+    from .. import models
 
     q = db.query(models.Product)
     if category_id:
         q = q.filter(models.Product.category_id == category_id)
+    from ..deps import get_setting
+
+    global_pct = float(get_setting(db, "markup_percent", 35.0))
     count = 0
     for p in q.all():
         old = p.price_sell
-        new = apply_pricing(db, p)
+        new = apply_pricing_with(p, global_pct)
         if old != new:
             count += 1
     db.commit()

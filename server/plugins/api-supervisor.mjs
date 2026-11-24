@@ -21,7 +21,11 @@ function startApi() {
   spawning = true
   try {
     const root = process.cwd()
-    const child = spawn('bash', [join(root, 'mini-services/api/start.sh')], {
+    const win = process.platform === 'win32'
+    const apiDir = join(root, 'mini-services/api')
+    const child = win
+      ? spawn('cmd.exe', ['/c', join(apiDir, 'start.bat')], { stdio: 'ignore', cwd: apiDir, env: process.env, windowsHide: true })
+      : spawn('bash', [join(apiDir, 'start.sh')], {
       stdio: 'ignore',
       detached: false,
       cwd: root,
@@ -44,6 +48,11 @@ function startApi() {
 }
 
 export default function () {
+  // Never auto-spawn on Vercel / other serverless hosts, in production builds, or when the
+  // backend is a remote URL (NUXT_API_INTERNAL). Local dev only.
+  const remote = process.env.NUXT_API_INTERNAL && !/127\.0\.0\.1|localhost/.test(process.env.NUXT_API_INTERNAL)
+  if (process.env.VERCEL || process.env.NODE_ENV === 'production' || remote) return
+
   healthy().then((ok) => {
     if (!ok) startApi()
   })

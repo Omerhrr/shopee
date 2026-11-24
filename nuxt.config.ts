@@ -3,6 +3,12 @@ export default defineNuxtConfig({
   devtools: { enabled: false },
   ssr: true,
 
+  // Vercel: Nitro auto-selects the vercel preset there; elsewhere it stays node-server.
+  // The scraper tool is the main page for now (the storefront remains at /products).
+  routeRules: {
+    '/': { redirect: { to: '/scraper', statusCode: 302 } }
+  },
+
   devServer: {
     host: '0.0.0.0',
     port: 3000,
@@ -26,10 +32,13 @@ export default defineNuxtConfig({
   components: [{ path: '~/components', pathPrefix: false }],
 
   runtimeConfig: {
-    // Internal FastAPI service (mini-service on port 8000)
+    // FastAPI backend URL used server-side and by the /api + /media proxies.
+    // On Vercel set NUXT_API_INTERNAL=https://your-backend.example.com
     apiInternal: 'http://127.0.0.1:8000',
     public: {
-      // Browser never talks to FastAPI directly - Nitro proxies /api/** and /media/**
+      // Browser base for API calls. Default '/api' = same-origin Nitro proxy.
+      // Optional: set NUXT_PUBLIC_API_BASE=https://your-backend.example.com/api to call the
+      // backend directly (avoids Vercel's ~4.5 MB function body limit for big ZIP downloads/uploads).
       apiBase: '/api'
     }
   },

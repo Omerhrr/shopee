@@ -6,9 +6,11 @@ const toast = useToastState()
 
 onMounted(() => cart.load())
 
-const freeThreshold = 50000
-const shipping = computed(() => (cart.subtotal >= freeThreshold || cart.subtotal === 0 ? 0 : 2500))
-const remaining = computed(() => Math.max(0, freeThreshold - cart.subtotal))
+const { data: rules } = await useAsyncData('shipping-rules', () => useApi()<any>('/catalog/shipping'))
+const freeThreshold = computed(() => rules.value?.free_threshold ?? 50000)
+const flatShipping = computed(() => rules.value?.flat ?? 2500)
+const shipping = computed(() => (cart.subtotal >= freeThreshold.value || cart.subtotal === 0 ? 0 : flatShipping.value))
+const remaining = computed(() => Math.max(0, freeThreshold.value - cart.subtotal))
 
 const setQty = (slug: string, q: number) => cart.setQty(slug, q)
 

@@ -54,6 +54,17 @@ def theme(db: Session = Depends(get_db)):
     }
 
 
+@router.get("/shipping")
+def shipping(db: Session = Depends(get_db)):
+    """Shipping rules used by cart/checkout (same values the order API applies)."""
+    from ..deps import get_setting
+
+    return {
+        "flat": int(get_setting(db, "shipping_flat", 2500) or 0),
+        "free_threshold": int(get_setting(db, "free_shipping_threshold", 50000) or 0),
+    }
+
+
 @router.get("/categories")
 def categories(db: Session = Depends(get_db)):
     cats = db.query(models.Category).order_by(models.Category.sort_order).all()

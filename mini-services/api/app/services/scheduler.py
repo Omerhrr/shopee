@@ -15,6 +15,10 @@ _lock = threading.Lock()
 def _job_scrape():
     db = SessionLocal()
     try:
+        from ..deps import get_setting
+
+        if not get_setting(db, "scrape_enabled", True):
+            return
         scrape_all_enabled(db, trigger="schedule")
     except Exception:
         pass
@@ -45,7 +49,6 @@ def start_scheduler():
             return _scheduler
         db = SessionLocal()
         minutes = _interval_minutes(db)
-        enabled = bool(db is not None)
         db.close()
         _scheduler = BackgroundScheduler(timezone="UTC")
         _scheduler.add_job(_job_scrape, IntervalTrigger(minutes=minutes), id="scrape_all", replace_existing=True)

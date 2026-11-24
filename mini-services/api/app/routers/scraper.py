@@ -28,9 +28,11 @@ from starlette.background import BackgroundTask
 from .. import models
 from ..config import MEDIA_DIR
 from ..database import get_db
+from ..deps import get_current_admin
 from .admin_export import CSV_HEADERS
 
-router = APIRouter(prefix="/api/scraper", tags=["scraper-tool"])
+# Exposes wholesale cost + supplier URLs + unpublished items, so admin only.
+router = APIRouter(prefix="/api/scraper", tags=["scraper-tool"], dependencies=[Depends(get_current_admin)])
 
 ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 

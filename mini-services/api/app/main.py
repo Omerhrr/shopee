@@ -27,10 +27,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Shopee Dropshipping API", version="1.0.0", lifespan=lifespan)
 
+import os
+
+_origins = [o.strip() for o in os.getenv("SHOPEE_CORS_ORIGINS", "*").split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_origins,
+    allow_credentials=False,  # auth uses a Bearer header, not cookies
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -57,8 +57,11 @@ def _filter_query(db: Session, p: ExportParams):
     query = (
         db.query(models.Product)
         .options(joinedload(models.Product.category), joinedload(models.Product.source))
-        .join(models.Source, models.Product.source_id == models.Source.id)
-        .filter(models.Product.status == "published", models.Source.enabled.is_(True))
+        .outerjoin(models.Source, models.Product.source_id == models.Source.id)
+        .filter(
+            models.Product.status == "published",
+            or_(models.Product.source_id.is_(None), models.Source.enabled.is_(True)),
+        )
     )
     if p.q:
         like = f"%{p.q}%"
@@ -204,17 +207,20 @@ def _to_csv_bytes(rows: list[dict], p: ExportParams) -> bytes:
 
 @router.get("/shopee/preview")
 def preview(p: ExportParams = Depends(), db: Session = Depends(get_db)):
-    total_q = _filter_query(db, p)
-    total = total_q.count()
-    needs_translation = sum(1 for prod in total_q.all() if _needs_translation(prod, p.title_lang))
-    no_image = sum(1 for prod in total_q.all() if not _image_urls(prod, p.public_base))
-    no_price = sum(1 for prod in total_q.all() if (prod.price_sell or 0) <= 0)
+    all_prods = _filter_query(db, p).all()
+    total = len(all_prods)
+    needs_translation = sum(1 for prod in all_prods if _needs_translation(prod, p.title_lang))
+    no_image = sum(1 for prod in all_prods if not _image_urls(prod, p.public_base))
+    no_price = sum(1 for prod in all_prods if (prod.price_sell or 0) <= 0)
 
     cat_counts = (
         db.query(models.Category.name_en, models.Category.name_ko, func.count(models.Product.id))
         .join(models.Product, models.Product.category_id == models.Category.id)
-        .join(models.Source, models.Product.source_id == models.Source.id)
-        .filter(models.Product.status == "published", models.Source.enabled.is_(True))
+        .outerjoin(models.Source, models.Product.source_id == models.Source.id)
+        .filter(
+            models.Product.status == "published",
+            or_(models.Product.source_id.is_(None), models.Source.enabled.is_(True)),
+        )
         .group_by(models.Category.id)
         .order_by(func.count(models.Product.id).desc())
         .all()

@@ -22,7 +22,7 @@ def dashboard(db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
     day_ago = now - timedelta(days=1)
     orders = db.query(models.Order)
-    orders_today = orders.filter(models.Order.created_at >= day_ago)
+    orders_today = orders.filter(models.Order.created_at >= day_ago, models.Order.status != "cancelled")
     revenue_today = orders_today.with_entities(func.coalesce(func.sum(models.Order.total), 0)).scalar()
     profit_today = orders_today.with_entities(func.coalesce(func.sum(models.Order.profit), 0)).scalar()
     last_scrape = db.query(models.ScrapeLog).order_by(models.ScrapeLog.started_at.desc()).first()
@@ -104,6 +104,8 @@ def finance_summary(days: int = 30, db: Session = Depends(get_db)):
 
 @router.get("/orders")
 def list_orders(status: str = "", q: str = "", page: int = 1, per_page: int = 20, db: Session = Depends(get_db)):
+    page = max(1, page)
+    per_page = max(1, min(per_page, 200))
     query = db.query(models.Order)
     if status:
         query = query.filter(models.Order.status == status)

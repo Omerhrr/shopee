@@ -263,7 +263,7 @@ def extract_product(html: str, page_url: str) -> dict | None:
             return None
         desc = _clean(og("og:description") or "")
         img = og("og:image")
-        gallery = [u for u in (img, og("og:image:secure_url")) if u]
+        gallery = [_abs(page_url, u) for u in (img, og("og:image:secure_url")) if u]
         price = parse_price_int(og("product:price:amount") or "") or parse_price_int(html)
         data = {
             "title": title,
@@ -436,6 +436,7 @@ def scrape_source(db: Session, source: models.Source, trigger: str = "manual") -
                 db.commit()
                 new_count += 1
             except Exception as e:
+                db.rollback()
                 errors.append(f"{url[:80]}: {str(e)[:120]}")
         client.close()
 

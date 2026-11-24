@@ -8,7 +8,8 @@
  * - If the API itself is unreachable we fail open (never lock the user out).
  */
 export default defineNuxtRouteMiddleware(async (to) => {
-  if (!to.path.startsWith('/admin')) return
+  // /scraper exposes wholesale cost + supplier data, so it needs the admin session too
+  if (!to.path.startsWith('/admin') && to.path !== '/scraper') return
 
   const token = useCookie<string | null>('shopee_admin_token')
 
@@ -19,10 +20,11 @@ export default defineNuxtRouteMiddleware(async (to) => {
     return
   }
 
-  if (!token.value) return navigateTo('/admin/login')
+  const loginUrl = to.path === '/scraper' ? '/admin/login?redirect=/scraper' : '/admin/login'
+  if (!token.value) return navigateTo(loginUrl)
   if (!(await tokenValid(token.value))) {
     token.value = null
-    return navigateTo('/admin/login')
+    return navigateTo(loginUrl)
   }
 })
 

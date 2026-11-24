@@ -1,6 +1,6 @@
 #!/bin/bash
 # Start both services if they are not already healthy.
-cd /home/z/my-project
+cd "$(dirname "$0")/.."
 
 # Backend (FastAPI on :8000)
 if ! curl -sf -o /dev/null http://127.0.0.1:8000/api/health; then

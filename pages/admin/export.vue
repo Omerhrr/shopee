@@ -19,7 +19,7 @@ const weightG = ref(500)
 const lengthCm = ref(25)
 const widthCm = ref(20)
 const heightCm = ref(10)
-const publicBase = ref('http://localhost:3000')
+const publicBase = ref(useRequestURL().origin)
 
 const qp = () => {
   const p: any = {

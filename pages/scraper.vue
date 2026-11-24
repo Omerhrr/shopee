@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const { t, tr } = useI18n()
-const api = useApi()
+const api = useAdminApi()
+const publicBase = useRequestURL().origin
 const toast = useToastState()
 const money = useMoney()
 
@@ -72,7 +73,7 @@ const download = async () => {
   try {
     const blob: Blob = await api<Blob>('/scraper/package', {
       method: 'POST',
-      body: { product_id: item.value.id },
+      body: { product_id: item.value.id, public_base: publicBase },
       responseType: 'blob'
     })
     const link = document.createElement('a')

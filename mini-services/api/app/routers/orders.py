@@ -1,5 +1,5 @@
 """Public orders API - guest checkout (demo payment) + order tracking."""
-import random
+import secrets
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from .. import models
 from ..database import get_db
 from ..deps import get_setting
-from ..serializers import order_admin
+from ..serializers import order_public
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
@@ -37,16 +37,24 @@ class CheckoutIn(BaseModel):
     locale: str = "en"
 
 
+def _new_order_number(db: Session) -> str:
+    """Hard-to-guess (the order page is public) and collision-checked."""
+    while True:
+        n = "SP" + datetime.now().strftime("%y%m%d") + secrets.token_hex(4).upper()
+        if not db.query(models.Order.id).filter(models.Order.order_number == n).first():
+            return n
+
+
 @router.post("")
 def create_order(body: CheckoutIn, db: Session = Depends(get_db)):
     if not body.items:
         raise HTTPException(400, "Cart is empty")
-    if not body.customer.name or not body.customer.address1:
+    if not body.customer.name.strip() or not body.customer.address1.strip():
         raise HTTPException(400, "Name and address are required")
 
     subtotal = cost_total = 0
     order = models.Order(
-        order_number="SP" + datetime.now().strftime("%y%m%d") + f"{random.randint(1000, 9999)}",
+        order_number=_new_order_number(db),
         customer_name=body.customer.name,
         email=body.customer.email,
         phone=body.customer.phone,
@@ -100,4 +108,4 @@ def get_order(order_number: str, db: Session = Depends(get_db)):
     o = db.query(models.Order).filter(models.Order.order_number == order_number).first()
     if not o:
         raise HTTPException(404, "Order not found")
-    return order_admin(o)
+    return order_public(o)

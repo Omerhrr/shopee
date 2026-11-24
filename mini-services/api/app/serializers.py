@@ -84,6 +84,27 @@ def order_admin(o: models.Order) -> dict:
     }
 
 
+def order_public(o: models.Order) -> dict:
+    """Customer-facing order view: no wholesale cost, no profit."""
+    return {
+        "order_number": o.order_number,
+        "customer_name": o.customer_name,
+        "address1": o.address1,
+        "address2": o.address2,
+        "status": o.status,
+        "payment_method": o.payment_method,
+        "subtotal": o.subtotal,
+        "shipping": o.shipping,
+        "total": o.total,
+        "created_at": o.created_at.isoformat() if o.created_at else None,
+        "items": [
+            {"id": i.id, "title_ko": i.title_ko, "title_en": i.title_en, "image": i.image,
+             "unit_sell": i.unit_sell, "quantity": i.quantity}
+            for i in o.items
+        ],
+    }
+
+
 def source_admin(s: models.Source) -> dict:
     return {
         "id": s.id,

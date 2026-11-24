@@ -6,6 +6,8 @@ const cart = useCartStore()
 const route = useRoute()
 const router = useRouter()
 
+const { data: shipRules } = await useAsyncData('shipping-rules', () => useApi()<any>('/catalog/shipping'))
+const adminToken = useCookie<string | null>('shopee_admin_token')
 const q = ref((route.query.q as string) || '')
 const mobileOpen = ref(false)
 
@@ -30,7 +32,7 @@ const switchLocale = (l: 'en' | 'ko') => setLocale(l)
       <div class="max-w-7xl mx-auto px-4 h-8 flex items-center justify-between gap-4">
         <span class="hidden sm:inline">{{ t('nav.shipsFromKorea') }}</span>
         <span class="sm:hidden">{{ t('nav.shipsFromKorea') }}</span>
-        <span class="font-medium text-accent-300">{{ t('nav.freeShipping', { amount: money(50000) }) }}</span>
+        <span class="font-medium text-accent-300">{{ t('nav.freeShipping', { amount: money(shipRules?.free_threshold ?? 50000) }) }}</span>
       </div>
     </div>
 
@@ -57,7 +59,7 @@ const switchLocale = (l: 'en' | 'ko') => setLocale(l)
         <div class="hidden lg:flex items-center mr-2 text-sm font-semibold">
           <NuxtLink to="/" class="px-3 py-2 rounded-lg hover:bg-ink-100 text-ink-700">{{ t('nav.home') }}</NuxtLink>
           <NuxtLink to="/products" class="px-3 py-2 rounded-lg hover:bg-ink-100 text-ink-700">{{ t('nav.products') }}</NuxtLink>
-          <NuxtLink to="/scraper" class="px-3 py-2 rounded-lg hover:bg-ink-100 text-ink-700">{{ t('nav.scraper') }}</NuxtLink>
+          <NuxtLink v-if="adminToken" to="/scraper" class="px-3 py-2 rounded-lg hover:bg-ink-100 text-ink-700">{{ t('nav.scraper') }}</NuxtLink>
         </div>
 
         <button
@@ -102,7 +104,7 @@ const switchLocale = (l: 'en' | 'ko') => setLocale(l)
       <div class="flex gap-2">
         <NuxtLink to="/" class="btn-secondary flex-1" @click="mobileOpen = false">{{ t('nav.home') }}</NuxtLink>
         <NuxtLink to="/products" class="btn-secondary flex-1" @click="mobileOpen = false">{{ t('nav.products') }}</NuxtLink>
-        <NuxtLink to="/scraper" class="btn-secondary flex-1" @click="mobileOpen = false">{{ t('nav.scraper') }}</NuxtLink>
+        <NuxtLink v-if="adminToken" to="/scraper" class="btn-secondary flex-1" @click="mobileOpen = false">{{ t('nav.scraper') }}</NuxtLink>
       </div>
     </div>
   </header>

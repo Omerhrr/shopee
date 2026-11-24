@@ -1,0 +1,7 @@
+mini-services/api/.venv
+mini-services/api/data
+mini-services/api/media
+scripts
+tests
+Caddyfile
+.git

@@ -20,9 +20,12 @@ def seed_settings(db: Session):
             db.add(models.Setting(key=key, value=value))
     db.commit()
     # Upgrade default translation provider for stores that never configured one
-    row = db.query(models.Setting).filter(models.Setting.key == "translate_provider").first()
-    if row and row.value == "none":
-        row.value = "google_free"
+    # One-time only: afterwards an admin choosing "none" must stick across restarts.
+    if not db.query(models.Setting).filter(models.Setting.key == "_translate_default_upgraded").first():
+        row = db.query(models.Setting).filter(models.Setting.key == "translate_provider").first()
+        if row and row.value == "none":
+            row.value = "google_free"
+        db.add(models.Setting(key="_translate_default_upgraded", value=True))
         db.commit()
 
 

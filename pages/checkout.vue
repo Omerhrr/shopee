@@ -23,8 +23,10 @@ const form = reactive({
 const payment = ref<'card' | 'bank'>('card')
 const placing = ref(false)
 
-const freeThreshold = 50000
-const shipping = computed(() => (cart.subtotal >= freeThreshold ? 0 : 2500))
+const { data: rules } = await useAsyncData('shipping-rules', () => api<any>('/catalog/shipping'))
+const shipping = computed(() =>
+  cart.subtotal >= (rules.value?.free_threshold ?? 50000) ? 0 : (rules.value?.flat ?? 2500)
+)
 
 const valid = computed(() => form.name && form.phone && form.address1 && cart.items.length)
 

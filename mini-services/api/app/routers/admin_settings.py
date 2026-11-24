@@ -1,5 +1,5 @@
 """Admin: app settings + translation pipeline control."""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -21,6 +21,25 @@ EDITABLE_KEYS = {
 }
 
 
+_FLOAT = {"markup_percent"}
+_INT = {"shipping_flat", "free_shipping_threshold", "scrape_interval_minutes",
+        "scrape_max_products_per_run", "theme_radius", "fonts_base_size", "fonts_heading_weight"}
+_BOOL = {"scrape_enabled", "theme_dark_default"}
+
+
+def _coerce(key, value):
+    try:
+        if key in _FLOAT:
+            return float(value)
+        if key in _INT:
+            return int(float(value))
+    except (TypeError, ValueError):
+        raise HTTPException(400, f"Invalid value for {key}")
+    if key in _BOOL:
+        return value if isinstance(value, bool) else str(value).lower() in ("1", "true", "yes", "on")
+    return value
+
+
 @router.get("/settings")
 def get_settings(db: Session = Depends(get_db)):
     rows = db.query(models.Setting).all()
@@ -30,9 +49,8 @@ def get_settings(db: Session = Depends(get_db)):
 @router.put("/settings")
 def put_settings(body: dict, db: Session = Depends(get_db)):
     changed_scrape = False
+    body = {k: _coerce(k, v) for k, v in body.items() if k in EDITABLE_KEYS}
     for key, value in body.items():
-        if key not in EDITABLE_KEYS:
-            continue
         if key.startswith("scrape_"):
             changed_scrape = True
         set_setting(db, key, value)

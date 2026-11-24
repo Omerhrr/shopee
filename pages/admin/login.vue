@@ -4,6 +4,7 @@ definePageMeta({ layout: false })
 const { t } = useI18n()
 const { siteName } = useTheme()
 const api = useApi()
+const route = useRoute()
 const toast = useToastState()
 
 const email = ref('admin@shopee.kr')
@@ -20,7 +21,8 @@ const submit = async () => {
       body: { email: email.value, password: password.value }
     })
     useCookie<string | null>('shopee_admin_token').value = res.access_token
-    navigateTo('/admin')
+    const to = String(route.query.redirect || '')
+    navigateTo(to.startsWith('/') && !to.startsWith('//') ? to : '/admin')
   } catch {
     error.value = t('admin.loginError')
   } finally {

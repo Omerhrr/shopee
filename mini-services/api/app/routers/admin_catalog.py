@@ -109,6 +109,8 @@ def list_products(
     per_page: int = 20,
     db: Session = Depends(get_db),
 ):
+    page = max(1, page)
+    per_page = max(1, min(per_page, 200))
     query = db.query(models.Product)
     if q:
         like = f"%{q}%"
@@ -290,6 +292,8 @@ def update_category(cid: int, body: CategoryIn, db: Session = Depends(get_db)):
     c = db.query(models.Category).filter(models.Category.id == cid).first()
     if not c:
         raise HTTPException(404, "Not found")
+    if db.query(models.Category).filter(models.Category.slug == body.slug, models.Category.id != cid).first():
+        raise HTTPException(400, "Slug already exists")
     c.slug = body.slug
     c.name_en = body.name_en
     c.name_ko = body.name_ko
