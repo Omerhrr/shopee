@@ -99,16 +99,6 @@ class _PathNormalizer:
 
 if IS_VERCEL:
     app.add_middleware(_PathNormalizer)
-    from starlette.requests import Request as _Req
-    from starlette.responses import JSONResponse as _JR
-
-    @app.exception_handler(404)
-    async def _not_found(request: _Req, exc):
-        # diagnostic: shows the path the function actually received
-        detail = getattr(exc, "detail", "Not Found")
-        hdrs = {k: v for k, v in request.headers.items()
-                if k.startswith(("x-vercel", "x-matched", "x-invoke", "x-forwarded-uri", "x-original", "x-now"))}
-        return _JR({"detail": detail, "seen_path": request.scope.get("path"), "hdrs": hdrs}, status_code=404)
 
 
 @app.get("/media/{path:path}")
