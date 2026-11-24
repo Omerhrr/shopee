@@ -86,7 +86,7 @@ const changePassword = async () => {
   }
 }
 
-useHead({ title: () => `Shopee · ${t('admin.settings')}` })
+useHead({ title: () => t('admin.settings') })
 </script>
 
 <template>

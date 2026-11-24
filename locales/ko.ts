@@ -188,6 +188,8 @@ export default {
     cafe: '네이버 카페',
     enabled: '활성',
     lastScraped: '마지막 수집',
+    productCount: '상품 {n}개',
+    noImg: '이미지 없음',
     test: '테스트',
     scrapeNow: '지금 수집',
     scrapingAll: '활성 소스 전체 수집 중…',
@@ -196,6 +198,7 @@ export default {
       listingUrl: '수집할 상품 목록 페이지 URL',
       adapter: '어댑터',
       maxProducts: '회차당 최대 상품 수',
+      maxPages: '한 번에 수집할 목록 페이지 수',
       mapCategory: '쇼핑몰 카테고리 매핑',
       contact: '연락처',
       notes: '메모'

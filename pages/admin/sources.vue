@@ -102,7 +102,7 @@ const scrapeNow = async (s: AdminSource) => {
 const statusBadge = (s: AdminSource) =>
   s.status === 'ok' ? 'bg-emerald-50 text-emerald-700' : s.status === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-ink-100 text-ink-500'
 
-useHead({ title: () => `Shopee · ${t('admin.sources')}` })
+useHead({ title: () => t('admin.sources') })
 </script>
 
 <template>
@@ -137,7 +137,7 @@ useHead({ title: () => `Shopee · ${t('admin.sources')}` })
           <tr v-for="s in sources || []" :key="s.id" class="hover:bg-ink-50/50">
             <td class="px-4 py-3">
               <div class="font-semibold text-ink-800">{{ s.name }}</div>
-              <div class="text-xs text-ink-400">{{ s.product_count }} products</div>
+              <div class="text-xs text-ink-400">{{ t('admin.productCount', { n: s.product_count }) }}</div>
             </td>
             <td class="px-3 py-3">
               <a v-if="s.url" :href="s.url" target="_blank" rel="noopener" class="text-xs text-ink-500 hover:text-brand-700 max-w-[180px] truncate block">{{ s.url }}</a>
@@ -148,7 +148,7 @@ useHead({ title: () => `Shopee · ${t('admin.sources')}` })
               <div class="flex flex-wrap gap-1">
                 <span v-if="s.paid_membership" class="badge bg-amber-100 text-amber-800 text-[10px]">{{ t('admin.paid') }}</span>
                 <span v-if="s.requires_cafe" class="badge bg-ink-100 text-ink-600 text-[10px]">{{ t('admin.cafe') }}</span>
-                <span v-if="!s.image_provided" class="badge bg-ink-100 text-ink-600 text-[10px]">no img</span>
+                <span v-if="!s.image_provided" class="badge bg-ink-100 text-ink-600 text-[10px]">{{ t('admin.noImg') }}</span>
               </div>
             </td>
             <td class="px-3 py-3">
@@ -163,7 +163,11 @@ useHead({ title: () => `Shopee · ${t('admin.sources')}` })
               </button>
             </td>
             <td class="px-3 py-3">
-              <span class="badge text-[10px]" :class="statusBadge(s)">{{ s.status }}</span>
+              <span
+                class="badge text-[10px]"
+                :class="[statusBadge(s), s.status === 'error' && s.last_error ? 'cursor-help underline decoration-dotted underline-offset-2' : '']"
+                :title="s.last_error || s.status"
+              >{{ s.status }}</span>
               <div class="text-[11px] text-ink-400 mt-0.5">{{ s.last_scraped_at ? new Date(s.last_scraped_at).toLocaleString() : '-' }}</div>
             </td>
             <td class="px-3 py-3">
@@ -189,7 +193,7 @@ useHead({ title: () => `Shopee · ${t('admin.sources')}` })
           <input v-model.number="form.max_products" type="number" min="1" max="5000" class="input" />
         </div>
         <div>
-          <span class="label">Listing pages per run</span>
+          <span class="label">{{ t('admin.sourceForm.maxPages') }}</span>
           <input v-model.number="form.max_pages" type="number" min="1" max="30" class="input" />
         </div>
         <div>

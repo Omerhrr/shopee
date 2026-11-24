@@ -47,7 +47,7 @@ const savePricing = async () => {
 
 const maxDaily = computed(() => Math.max(1, ...(data.value?.daily || []).map((d: any) => d.revenue)))
 
-useHead({ title: () => `Shopee · ${t('admin.finance')}` })
+useHead({ title: () => t('admin.finance') })
 </script>
 
 <template>

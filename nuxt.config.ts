@@ -41,7 +41,7 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      titleTemplate: '%s · Shopee',
+      // titleTemplate is set in app.vue (dynamic site name from Admin > Settings)
       htmlAttrs: { lang: 'en' },
       meta: [
         { charset: 'utf-8' },

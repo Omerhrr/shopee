@@ -65,18 +65,38 @@ const isActive = (to: string) => (to === '/admin' ? route.path === '/admin' : ro
       </div>
     </aside>
 
-    <!-- Mobile topbar -->
-    <div class="md:hidden fixed top-0 inset-x-0 h-14 bg-inverse text-white flex items-center justify-between px-4 z-40">
-      <div class="flex items-center gap-2">
-        <span class="w-7 h-7 rounded-lg bg-brand-600 font-extrabold flex items-center justify-center text-sm">{{ (siteName || 'S').charAt(0).toUpperCase() }}</span>
-        <span class="font-bold">{{ siteName }} Admin</span>
+    <!-- Mobile topbar: brand row (with storefront + sign-out actions) and a scrollable page-chip row -->
+    <div class="md:hidden fixed top-0 inset-x-0 z-40 bg-inverse text-white shadow-lg">
+      <div class="h-12 flex items-center justify-between px-4">
+        <div class="flex items-center gap-2">
+          <span class="w-7 h-7 rounded-lg bg-brand-600 font-extrabold flex items-center justify-center text-sm">{{ (siteName || 'S').charAt(0).toUpperCase() }}</span>
+          <span class="font-bold">{{ siteName }} Admin</span>
+        </div>
+        <div class="flex items-center gap-1">
+          <NuxtLink
+            to="/"
+            class="p-2 rounded-lg hover:bg-white/10 text-white/90"
+            :title="t('admin.openStore')"
+            :aria-label="t('admin.openStore')"
+          >
+            <svg style="width:18px;height:18px" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8M5 10v10h14V10" /></svg>
+          </NuxtLink>
+          <button
+            class="p-2 rounded-lg hover:bg-white/10 text-rose-300"
+            :title="t('admin.logout')"
+            :aria-label="t('admin.logout')"
+            @click="logout"
+          >
+            <svg style="width:18px;height:18px" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></svg>
+          </button>
+        </div>
       </div>
-      <div class="flex gap-2 overflow-x-auto">
-        <NuxtLink v-for="l in links" :key="l.to" :to="l.to" class="text-xs px-2 py-1 rounded-lg whitespace-nowrap" :class="isActive(l.to) ? 'bg-brand-600' : 'bg-white/10'">{{ l.label }}</NuxtLink>
+      <div class="h-10 px-3 flex items-center gap-2 overflow-x-auto scroll-thin">
+        <NuxtLink v-for="l in links" :key="l.to" :to="l.to" class="text-xs px-2.5 py-1.5 rounded-lg whitespace-nowrap" :class="isActive(l.to) ? 'bg-brand-600' : 'bg-white/10'">{{ l.label }}</NuxtLink>
       </div>
     </div>
 
-    <div class="flex-1 md:ml-60 pt-14 md:pt-0 min-w-0">
+    <div class="flex-1 md:ml-60 pt-[88px] md:pt-0 min-w-0">
       <div class="p-4 md:p-8 max-w-6xl">
         <slot />
       </div>

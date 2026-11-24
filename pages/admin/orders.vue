@@ -40,7 +40,7 @@ const badge = (s: string) =>
     cancelled: 'bg-rose-50 text-rose-700'
   }[s] || 'bg-ink-100 text-ink-500')
 
-useHead({ title: () => `Shopee · ${t('admin.orders')}` })
+useHead({ title: () => t('admin.orders') })
 </script>
 
 <template>

@@ -1,4 +1,6 @@
 """Public storefront catalog API."""
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -94,8 +96,12 @@ def products(
         if cat:
             query = query.filter(models.Product.category_id == cat.id)
     if q:
-        like = f"%{q}%"
-        query = query.filter(or_(models.Product.title_en.ilike(like), models.Product.title_ko.ilike(like)))
+        # Tokenized search: every whitespace-separated word must appear in the EN
+        # or KO title, so "phone case" matches "Cell phone disassembly clear case"
+        # instead of returning 0 results for the literal phrase "%phone case%".
+        for word in [w for w in re.split(r"\s+", q.strip()) if w]:
+            like = f"%{word}%"
+            query = query.filter(or_(models.Product.title_en.ilike(like), models.Product.title_ko.ilike(like)))
 
     if sort == "price_asc":
         query = query.order_by(models.Product.price_sell.asc())

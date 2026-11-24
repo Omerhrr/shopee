@@ -28,7 +28,7 @@ const runTrans = async () => {
   }
 }
 
-useHead({ title: () => `Shopee · ${t('admin.dashboard')}` })
+useHead({ title: () => t('admin.dashboard') })
 </script>
 
 <template>

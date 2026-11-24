@@ -71,7 +71,7 @@ const statusBadge = (s: AdminSource) =>
 
 const fmt = (s: string | null | undefined) => (s ? new Date(s).toLocaleString() : '-')
 
-useHead({ title: () => `Shopee · ${t('admin.scraping')}` })
+useHead({ title: () => t('admin.scraping') })
 </script>
 
 <template>

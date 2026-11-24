@@ -156,7 +156,7 @@ const previewCost = computed(() => {
   return money(Math.ceil((form.price_cost || 0) * (1 + pct / 100) / 10) * 10)
 })
 
-useHead({ title: () => `Shopee · ${t('admin.products')}` })
+useHead({ title: () => t('admin.products') })
 </script>
 
 <template>

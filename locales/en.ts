@@ -191,6 +191,8 @@ export default {
     cafe: 'Naver cafe',
     enabled: 'Enabled',
     lastScraped: 'Last scraped',
+    productCount: '{n} products',
+    noImg: 'no img',
     test: 'Test',
     scrapeNow: 'Scrape now',
     scrapingAll: 'Scraping all enabled sources…',
@@ -199,6 +201,7 @@ export default {
       listingUrl: 'Listing page URL to scrape',
       adapter: 'Adapter',
       maxProducts: 'Max products per run',
+      maxPages: 'Listing pages per run',
       mapCategory: 'Storefront category',
       contact: 'Contact',
       notes: 'Notes'
