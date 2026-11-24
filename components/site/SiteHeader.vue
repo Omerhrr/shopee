@@ -57,6 +57,7 @@ const switchLocale = (l: 'en' | 'ko') => setLocale(l)
         <div class="hidden lg:flex items-center mr-2 text-sm font-semibold">
           <NuxtLink to="/" class="px-3 py-2 rounded-lg hover:bg-ink-100 text-ink-700">{{ t('nav.home') }}</NuxtLink>
           <NuxtLink to="/products" class="px-3 py-2 rounded-lg hover:bg-ink-100 text-ink-700">{{ t('nav.products') }}</NuxtLink>
+          <NuxtLink to="/scraper" class="px-3 py-2 rounded-lg hover:bg-ink-100 text-ink-700">{{ t('nav.scraper') }}</NuxtLink>
         </div>
 
         <button
@@ -101,6 +102,7 @@ const switchLocale = (l: 'en' | 'ko') => setLocale(l)
       <div class="flex gap-2">
         <NuxtLink to="/" class="btn-secondary flex-1" @click="mobileOpen = false">{{ t('nav.home') }}</NuxtLink>
         <NuxtLink to="/products" class="btn-secondary flex-1" @click="mobileOpen = false">{{ t('nav.products') }}</NuxtLink>
+        <NuxtLink to="/scraper" class="btn-secondary flex-1" @click="mobileOpen = false">{{ t('nav.scraper') }}</NuxtLink>
       </div>
     </div>
   </header>

@@ -8,7 +8,8 @@ export default {
     freeShipping: '{amount} 이상 무료 배송',
     shipsFromKorea: '한국에서 발송',
     darkMode: '다크 모드로 전환',
-    lightMode: '라이트 모드로 전환'
+    lightMode: '라이트 모드로 전환',
+    scraper: '스크래퍼'
   },
   home: {
     heroBadge: '한국 도매 마켓플레이스',
@@ -317,5 +318,28 @@ export default {
     exportEmpty: '해당 조건으로 내보낼 상품이 없습니다.',
     exportComplianceTitle: '등록 전 확인:',
     exportCompliance: '상품은 한국 도매 사이트에서 수집되었습니다. 판매 승인을 받은 상품만 등록하세요. 이미지·브랜드 IP 규정 위반 상품은 쇼피에서 삭제되며 반복 위반 시 계정이 정지될 수 있습니다.'
+  },
+  scraper: {
+    title: '스크래퍼',
+    subtitle: '이 사이트가 수집한 모든 상품을 한 곳에서 관리합니다. 상품을 선택해 쇼피 등록용 패키지(가격·설명·Item SKU별 이미지)를 내려받으면 API 승인 전에도 shopee.kr에 바로 등록할 수 있습니다.',
+    searchPlaceholder: '사이트에 수집된 전체 상품 검색…',
+    resultsCount: '이 사이트에 수집된 상품 {n}건',
+    select: '선택',
+    selected: '선택됨',
+    clear: '선택 해제',
+    priceCost: '도매가',
+    priceSell: '소매가 (마진 적용)',
+    images: '이미지',
+    sku: 'Item SKU',
+    source: '원본 페이지',
+    downloadZip: '쇼피 패키지 내려받기 (ZIP)',
+    copyTitle: '상품명 복사',
+    copyDesc: '설명 복사',
+    copied: '복사되었습니다',
+    statusDraft: '임시',
+    sourceOff: '소스 꺼짐',
+    noResults: '검색 결과가 없습니다.',
+    descr: '설명',
+    none: '없음'
   }
 }

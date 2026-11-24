@@ -8,7 +8,8 @@ export default {
     freeShipping: 'Free shipping over {amount}',
     shipsFromKorea: 'Ships from Korea',
     darkMode: 'Switch to dark mode',
-    lightMode: 'Switch to light mode'
+    lightMode: 'Switch to light mode',
+    scraper: 'Scraper'
   },
   home: {
     heroBadge: 'Korean wholesale marketplace',
@@ -325,5 +326,28 @@ export default {
     exportEmpty: 'Nothing to export with these filters.',
     exportComplianceTitle: 'Before you list:',
     exportCompliance: 'these listings were scraped from Korean wholesale sites. Only list products you are authorized to resell — Shopee removes listings that violate image or brand IP rules, and repeated strikes can suspend the shop.'
+  },
+  scraper: {
+    title: 'Scraper',
+    subtitle: 'Everything this site has already scraped, in one place. Pick any listing and download it Shopee-ready - price, description and images matched by Item SKU - to post it on shopee.kr while API access is pending.',
+    searchPlaceholder: 'Search all listings on this site…',
+    resultsCount: '{n} listings stored on this site',
+    select: 'Select',
+    selected: 'Selected',
+    clear: 'Clear selection',
+    priceCost: 'Wholesale cost',
+    priceSell: 'Your retail price (markup applied)',
+    images: 'Images',
+    sku: 'Item SKU',
+    source: 'Source page',
+    downloadZip: 'Download Shopee package (ZIP)',
+    copyTitle: 'Copy title',
+    copyDesc: 'Copy description',
+    copied: 'Copied',
+    statusDraft: 'Draft',
+    sourceOff: 'Source off',
+    noResults: 'No listings match your search.',
+    descr: 'Description',
+    none: 'None'
   }
 }
