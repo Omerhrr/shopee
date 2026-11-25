@@ -28,7 +28,7 @@ from .. import models
 from ..services import media_store
 from ..services.translator import ensure_translated
 from ..database import get_db
-from ..deps import get_current_admin
+from ..deps import get_current_admin, get_setting
 from .admin_export import CSV_HEADERS
 
 # Exposes wholesale cost + supplier URLs + unpublished items, so admin only.
@@ -162,6 +162,22 @@ def _local_files(images: list) -> list[tuple[bytes, str]]:
     return out
 
 
+def _zip_enabled(db: Session) -> bool:
+    v = get_setting(db, "download_zip_enabled", True)
+    return v if isinstance(v, bool) else str(v).lower() in ("1", "true", "yes", "on")
+
+
+def _require_zip(db: Session) -> None:
+    if not _zip_enabled(db):
+        raise HTTPException(403, "ZIP downloads are turned off (Admin > Settings > Downloads). Use the Excel download.")
+
+
+@router.get("/options")
+def options(db: Session = Depends(get_db)):
+    """What the downloader page may offer (set in Admin > Settings > Downloads)."""
+    return {"zip_enabled": _zip_enabled(db)}
+
+
 class PackageIn(BaseModel):
     product_id: int
     lang: str = "en"                  # en | ko
@@ -180,6 +196,7 @@ class PackageIn(BaseModel):
 def package(body: PackageIn, db: Session = Depends(get_db)):
     """Download one listing from our catalog as a Shopee-ready ZIP
     (CSV row + SKU-named images + plain-text listing info)."""
+    _require_zip(db)
     p = db.query(models.Product).filter(models.Product.id == body.product_id).first()
     if not p:
         raise HTTPException(404, "Product not found")
@@ -320,6 +337,7 @@ class MultiPackageIn(BaseModel):
 def package_multi(body: MultiPackageIn, db: Session = Depends(get_db)):
     """Several listings in ONE ZIP: combined shopee CSV (one row each), listings.txt,
     images/<SKU>_<n>.ext. Items without a usable stored image are listed in skipped.txt."""
+    _require_zip(db)
     ids = list(dict.fromkeys(body.product_ids))
     if not ids:
         raise HTTPException(400, "Nothing selected")
@@ -390,4 +408,91 @@ def package_multi(body: MultiPackageIn, db: Session = Depends(get_db)):
         filename=f"shopee_listings_{len(txt)}_items.zip",
         background=BackgroundTask(os.unlink, tmp.name),
         headers={"X-Skipped": str(len(skipped)), "Access-Control-Expose-Headers": "X-Skipped"},
+    )
+
+
+# ---------------------------------------------------------------- Excel (.xlsx) only
+MAX_EXCEL_ITEMS = 500  # per file (thumbnails + on-demand translation time)
+
+
+class ExcelIn(BaseModel):
+    product_ids: list[int]
+    lang: str = "en"
+    price_mode: str = "sell"
+    currency: str = "KRW"
+    usd_rate: float = 1350.0
+    stock: int = 10
+    weight_g: int = 500
+    length_cm: float = 25
+    width_cm: float = 20
+    height_cm: float = 10
+    public_base: str = "http://localhost:3000"
+
+
+@router.post("/excel")
+def excel(body: ExcelIn, db: Session = Depends(get_db)):
+    """Selected listings as ONE formatted Excel file (no images inside the download, only links)."""
+    from fastapi.responses import Response
+
+    from ..services.xlsx_export import build_workbook
+
+    ids = list(dict.fromkeys(body.product_ids))
+    if not ids:
+        raise HTTPException(400, "Nothing selected")
+    if len(ids) > MAX_EXCEL_ITEMS:
+        raise HTTPException(400, f"Max {MAX_EXCEL_ITEMS} listings per Excel file")
+    prods = {p.id: p for p in db.query(models.Product).filter(models.Product.id.in_(ids)).all()}
+    try:
+        ensure_translated(db, list(prods.values()), body.lang, budget_s=45, max_items=MAX_EXCEL_ITEMS)
+    except Exception:
+        db.rollback()
+
+    cur = body.currency.upper()
+    rows = []
+    for pid in ids:
+        p = prods.get(pid)
+        if not p:
+            continue
+        sku = f"SP-{p.id:06d}"
+        if body.lang == "ko":
+            title = (p.title_ko or "").strip() or (p.title_en or "").strip()
+            desc = (p.desc_ko or "").strip() or (p.desc_en or "").strip()
+        else:
+            title = (p.title_en or "").strip() or (p.title_ko or "").strip()
+            desc = (p.desc_en or "").strip() or (p.desc_ko or "").strip()
+        title, desc = title[:255], " ".join(desc.split())[:3000]
+        base = p.price_sell if body.price_mode == "sell" else p.price_cost
+        price = round(base / body.usd_rate, 2) if (cur == "USD" and body.usd_rate > 0) else base
+        urls = []
+        for img in p.images or []:
+            if isinstance(img, str) and img.strip():
+                u = img.strip()
+                urls.append(u if u.startswith(("http://", "https://")) else body.public_base.rstrip("/") + "/" + u.lstrip("/"))
+            if len(urls) >= 5:
+                break
+        urls += [""] * (5 - len(urls))
+        thumb = None
+        local = _local_files(p.images[:1] if p.images else [])
+        if local:
+            thumb = local[0][0]
+        rows.append({
+            "cells": ["", title, desc, price, max(1, int(body.stock)), sku, "", *urls,
+                      body.weight_g, body.length_cm, body.width_cm, body.height_cm, p.source_url or ""],
+            "sku": sku, "title": title, "price": price, "cost": p.price_cost or 0,
+            "source_url": p.source_url or "", "thumb": thumb,
+        })
+    if not rows:
+        raise HTTPException(404, "Nothing found")
+
+    meta = {
+        "price_fmt": "#,##0.00" if cur == "USD" else "#,##0",
+        "price_label": f"Price ({cur})",
+        "lang_label": "Korean" if body.lang == "ko" else "English",
+        "price_note": f"{'Retail (incl. markup)' if body.price_mode == 'sell' else 'Wholesale cost'} in {cur}",
+    }
+    data = build_workbook(CSV_HEADERS, rows, meta)
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="shopee_listings_{len(rows)}_items.xlsx"'},
     )

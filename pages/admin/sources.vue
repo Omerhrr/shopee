@@ -194,7 +194,7 @@ useHead({ title: () => t('admin.sources') })
         </div>
         <div>
           <span class="label">{{ t('admin.sourceForm.maxPages') }}</span>
-          <input v-model.number="form.max_pages" type="number" min="1" max="30" class="input" />
+          <input v-model.number="form.max_pages" type="number" min="1" max="500" class="input" />
         </div>
         <div>
           <span class="label">{{ t('admin.sourceForm.mapCategory') }}</span>

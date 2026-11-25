@@ -18,7 +18,7 @@ const { data: enabledSources, refresh: refreshSources } = await useAsyncData('ad
   await adminApi<AdminSource[]>('/admin/sources', { params: { enabled: 'true' } })
 )
 
-const form = reactive({ interval_minutes: 360, enabled: true, max_products_per_run: 10 })
+const form = reactive({ interval_minutes: 360, enabled: true, max_products_per_run: 500 })
 watchEffect(() => {
   if (sched.value) {
     form.interval_minutes = sched.value.interval_minutes
@@ -97,7 +97,7 @@ useHead({ title: () => t('admin.scraping') })
             </div>
             <div>
               <span class="label">{{ t('admin.maxPerRun') }}</span>
-              <input v-model.number="form.max_products_per_run" type="number" min="1" max="50" class="input" />
+              <input v-model.number="form.max_products_per_run" type="number" min="1" max="5000" class="input" />
             </div>
           </div>
           <div class="flex items-center justify-between">

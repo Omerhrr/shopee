@@ -18,13 +18,14 @@ EDITABLE_KEYS = {
     "translate_api_secret", "translate_deepl_host", "translate_libre_url",
     "theme_primary", "theme_accent", "theme_radius", "theme_dark_default",
     "fonts_family", "fonts_heading", "fonts_base_size", "fonts_heading_weight",
+    "download_zip_enabled",
 }
 
 
 _FLOAT = {"markup_percent"}
 _INT = {"shipping_flat", "free_shipping_threshold", "scrape_interval_minutes",
         "scrape_max_products_per_run", "theme_radius", "fonts_base_size", "fonts_heading_weight"}
-_BOOL = {"scrape_enabled", "theme_dark_default"}
+_BOOL = {"scrape_enabled", "theme_dark_default", "download_zip_enabled"}
 
 
 def _coerce(key, value):

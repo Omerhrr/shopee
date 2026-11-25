@@ -26,7 +26,9 @@ const form = reactive({
   translate_api_key: '',
   translate_api_secret: '',
   translate_deepl_host: 'free',
-  translate_libre_url: ''
+  translate_libre_url: '',
+  // downloads
+  download_zip_enabled: true
 })
 
 watchEffect(() => {
@@ -225,6 +227,17 @@ useHead({ title: () => t('admin.settings') })
         </div>
       </div>
 
+      <!-- Downloads -->
+      <div class="card p-6">
+        <h3 class="font-extrabold text-ink-900 mb-1">{{ t('admin.downloads') }}</h3>
+        <p class="text-xs text-ink-400 mb-4">{{ t('admin.downloadsHint') }}</p>
+        <label class="flex items-center gap-3 cursor-pointer">
+          <input v-model="form.download_zip_enabled" type="checkbox" class="w-4 h-4 accent-brand-600" />
+          <span class="text-sm text-ink-700">{{ t('admin.zipEnabled') }}</span>
+        </label>
+        <button class="btn-primary text-sm mt-4" @click="saveSettings({ download_zip_enabled: !!form.download_zip_enabled })">{{ t('admin.save') }}</button>
+      </div>
+
       <!-- Translation -->
       <div class="card p-6">
         <h3 class="font-extrabold text-ink-900 mb-1">{{ t('admin.translation') }}</h3>
@@ -235,6 +248,7 @@ useHead({ title: () => t('admin.settings') })
             <select v-model="form.translate_provider" class="input">
               <option value="google_free">{{ t('admin.providerFree') }}</option>
               <option value="edge">{{ t('admin.providerEdge') }}</option>
+              <option value="gemini">Google Gemini (free key)</option>
               <option value="libre">LibreTranslate</option>
               <option value="papago">Papago (Naver)</option>
               <option value="deepl">DeepL</option>

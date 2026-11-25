@@ -17,6 +17,16 @@ const pages = ref(1)
 const cats = ref<any[]>([])
 const loadedOnce = ref(false)
 
+// which download methods the admin allows (Admin > Settings > Downloads)
+const zipEnabled = ref(true)
+const loadOptions = async () => {
+  try {
+    const o = await api<any>('/scraper/options')
+    zipEnabled.value = o?.zip_enabled !== false
+  } catch { /* keep default */ }
+}
+onMounted(loadOptions)
+
 const load = async () => {
   loading.value = true
   try {
@@ -91,6 +101,31 @@ const download = async () => {
   }
 }
 
+const downloadingXlsx = ref(false)
+const saveBlob = (blob: Blob, name: string) => {
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = name
+  link.click()
+  URL.revokeObjectURL(link.href)
+}
+const downloadExcelOne = async () => {
+  if (!item.value) return
+  downloadingXlsx.value = true
+  try {
+    const blob: Blob = await api<Blob>('/scraper/excel', {
+      method: 'POST',
+      body: { product_ids: [item.value.id], lang: locale.value, public_base: publicBase },
+      responseType: 'blob'
+    })
+    saveBlob(blob, `shopee_listing_${item.value.sku}.xlsx`)
+  } catch (e: any) {
+    toast(e?.data?.detail || e?.response?._data?.detail || t('admin.error'))
+  } finally {
+    downloadingXlsx.value = false
+  }
+}
+
 // ---- multi-select (kept across pages and searches) ----
 const selectedIds = ref<Set<number>>(new Set())
 const selCount = computed(() => selectedIds.value.size)
@@ -124,8 +159,33 @@ const selectAllResults = async () => {
 const clearSel = () => { selectedIds.value = new Set() }
 
 const BATCH = 100
+const XLSX_BATCH = 500
 const bulkBusy = ref(false)
 const bulkProgress = ref('')
+const downloadSelectedExcel = async () => {
+  const ids = [...selectedIds.value]
+  if (!ids.length) return
+  bulkBusy.value = true
+  const parts = Math.ceil(ids.length / XLSX_BATCH)
+  try {
+    for (let i = 0; i < parts; i++) {
+      bulkProgress.value = t('scraper.downloadingProgress', { i: i + 1, n: parts })
+      const blob: Blob = await api<Blob>('/scraper/excel', {
+        method: 'POST',
+        body: { product_ids: ids.slice(i * XLSX_BATCH, (i + 1) * XLSX_BATCH), lang: locale.value, public_base: publicBase },
+        responseType: 'blob'
+      })
+      saveBlob(blob, parts > 1 ? `shopee_listings_part${i + 1}of${parts}.xlsx` : `shopee_listings_${ids.length}_items.xlsx`)
+      await new Promise((r) => setTimeout(r, 400))
+    }
+  } catch (e: any) {
+    toast(e?.data?.detail || e?.response?._data?.detail || t('admin.error'))
+  } finally {
+    bulkBusy.value = false
+    bulkProgress.value = ''
+  }
+}
+
 const downloadSelected = async () => {
   const ids = [...selectedIds.value]
   if (!ids.length) return
@@ -229,9 +289,14 @@ useHead({ title: () => t('scraper.title') })
           </button>
           <button v-if="selCount" class="btn-ghost text-xs" @click="clearSel">{{ t('scraper.clearSel') }}</button>
           <span v-if="selCount" class="badge bg-brand-600 text-white">{{ t('scraper.selectedN', { n: selCount.toLocaleString() }) }}</span>
-          <button v-if="selCount" class="btn-primary text-xs !py-2 ml-auto" :disabled="bulkBusy" @click="downloadSelected">
-            {{ bulkBusy ? bulkProgress || '…' : t('scraper.downloadSelected', { n: selCount.toLocaleString() }) }}
-          </button>
+          <div v-if="selCount" class="ml-auto flex flex-wrap gap-2">
+            <button class="btn-primary text-xs !py-2" :disabled="bulkBusy" @click="downloadSelectedExcel">
+              {{ bulkBusy ? bulkProgress || '…' : t('scraper.downloadSelectedExcel', { n: selCount.toLocaleString() }) }}
+            </button>
+            <button v-if="zipEnabled" class="btn-secondary text-xs !py-2" :disabled="bulkBusy" @click="downloadSelected">
+              {{ t('scraper.downloadSelectedZip', { n: selCount.toLocaleString() }) }}
+            </button>
+          </div>
         </div>
 
         <!-- selected listing: download panel -->
@@ -253,7 +318,8 @@ useHead({ title: () => t('scraper.title') })
           </div>
 
           <div class="flex flex-wrap gap-2 mb-5">
-            <button class="btn-primary text-sm" :disabled="downloading" @click="download">{{ downloading ? '…' : t('scraper.downloadZip') }}</button>
+            <button class="btn-primary text-sm" :disabled="downloadingXlsx" @click="downloadExcelOne">{{ downloadingXlsx ? '…' : t('scraper.downloadExcel') }}</button>
+            <button v-if="zipEnabled" class="btn-secondary text-sm" :disabled="downloading" @click="download">{{ downloading ? '…' : t('scraper.downloadZip') }}</button>
             <button class="btn-secondary text-sm" @click="copy(titleOf(item))">{{ t('scraper.copyTitle') }}</button>
             <button class="btn-secondary text-sm" @click="copy(descOf(item))">{{ t('scraper.copyDesc') }}</button>
           </div>

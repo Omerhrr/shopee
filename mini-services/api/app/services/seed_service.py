@@ -30,6 +30,17 @@ def seed_settings(db: Session):
         db.commit()
 
 
+def _raise_scrape_limit(db: Session):
+    """One-time: the old default of 10 products per run is far too low for full-catalog scraping."""
+    if db.query(models.Setting).filter(models.Setting.key == "_scrape_limit_raised").first():
+        return
+    row = db.query(models.Setting).filter(models.Setting.key == "scrape_max_products_per_run").first()
+    if row and int(row.value or 0) < 100:
+        row.value = 500
+    db.add(models.Setting(key="_scrape_limit_raised", value=True))
+    db.commit()
+
+
 def seed_admin(db: Session):
     """Create the admin once. Emails are stored lower-case (login lower-cases what you type).
 
@@ -212,6 +223,7 @@ def enable_verified_sources(db: Session) -> int:
 
 def ensure_seed(db: Session):
     seed_settings(db)
+    _raise_scrape_limit(db)
     seed_admin(db)
     seed_categories(db)
     seed_sources(db)

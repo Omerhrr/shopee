@@ -67,8 +67,9 @@ DEFAULT_SETTINGS = {
     "free_shipping_threshold": 50000,
     # Scraping / auto-update of new listings
     "scrape_enabled": True,
+    "download_zip_enabled": True,
     "scrape_interval_minutes": 360,
-    "scrape_max_products_per_run": 10,
+    "scrape_max_products_per_run": 500,
     # Auto translation of scraped Korean listings
     "translate_provider": "google_free",  # google_free | papago | deepl | google | none
     "translate_api_key": "",

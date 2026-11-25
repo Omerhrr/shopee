@@ -177,7 +177,7 @@ def scrape_schedule(db: Session = Depends(get_db)):
     return {
         "interval_minutes": int(get_setting(db, "scrape_interval_minutes", 360)),
         "enabled": bool(get_setting(db, "scrape_enabled", True)),
-        "max_products_per_run": int(get_setting(db, "scrape_max_products_per_run", 10)),
+        "max_products_per_run": int(get_setting(db, "scrape_max_products_per_run", 500)),
         "next_runs": next_run_times(),
     }
 
@@ -185,7 +185,7 @@ def scrape_schedule(db: Session = Depends(get_db)):
 class ScheduleIn(BaseModel):
     interval_minutes: int
     enabled: bool
-    max_products_per_run: int = 10
+    max_products_per_run: int = 500
 
 
 @router.put("/scrape/schedule")
@@ -193,7 +193,7 @@ def update_schedule(body: ScheduleIn, db: Session = Depends(get_db)):
     interval = max(5, int(body.interval_minutes))
     set_setting(db, "scrape_interval_minutes", interval)
     set_setting(db, "scrape_enabled", body.enabled)
-    set_setting(db, "scrape_max_products_per_run", max(1, min(body.max_products_per_run, 50)))
+    set_setting(db, "scrape_max_products_per_run", max(1, min(body.max_products_per_run, 5000)))
     db.commit()
     reschedule_scrape()
     return scrape_schedule(db)

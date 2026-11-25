@@ -140,6 +140,36 @@ def _google(text: str, key: str, src: str = "ko", tgt: str = "en") -> str:
     return sanitize_dashes(r.json()["data"]["translations"][0]["translatedText"])
 
 
+def _gemini(text: str, key: str, src: str = "ko", tgt: str = "en") -> str:
+    """Google Gemini (free tier key from Google AI Studio, no card needed)."""
+    import time
+
+    if not key:
+        raise RuntimeError("Gemini API key is empty (Admin > Settings > Translation)")
+    names = {"ko": "Korean", "en": "English"}
+    prompt = (
+        f"Translate the following {names.get(src, src)} text to {names.get(tgt, tgt)}. "
+        "Keep the same number of lines and line order. Output only the translation, no notes, no quotes.\n\n" + text
+    )
+    last = None
+    for attempt in range(3):
+        r = httpx.post(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
+            headers={"x-goog-api-key": key, "Content-Type": "application/json"},
+            json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0}},
+            timeout=60,
+        )
+        if r.status_code == 429:
+            last = r
+            time.sleep(2 + attempt * 3)
+            continue
+        if r.status_code >= 400:
+            raise RuntimeError(f"Gemini error {r.status_code}: {r.text[:200]}")
+        parts = r.json()["candidates"][0]["content"]["parts"]
+        return sanitize_dashes("".join(x.get("text", "") for x in parts).strip())
+    raise RuntimeError("Gemini free limit reached (429). Wait a minute or try again tomorrow.")
+
+
 def _chunks(text: str, size: int = 3000) -> list[str]:
     """Split long text on whitespace/sentence boundaries so providers never truncate it."""
     out, cur = [], ""
@@ -175,7 +205,7 @@ def translate_text(text: str, db: Session | None = None, src: str = "ko", tgt: s
     text = (text or "").strip()
     if not text:
         return ""
-    if provider not in ("google_free", "edge", "libre", "papago", "deepl", "google"):
+    if provider not in ("google_free", "edge", "libre", "gemini", "papago", "deepl", "google"):
         raise RuntimeError("No translation provider configured (Admin > Settings > Translation)")
     key, secret, host = cfg.get("key", ""), cfg.get("secret", ""), cfg.get("host", "free")
 
@@ -199,6 +229,8 @@ def translate_text(text: str, db: Session | None = None, src: str = "ko", tgt: s
                     raise RuntimeError(f"Microsoft failed: {type(e1).__name__}: {str(e1)[:160]} | Google fallback failed: {str(e2)[:120]}")
         if provider == "libre":
             return _libre(chunk, cfg.get("libre_url", ""), key, src, tgt)
+        if provider == "gemini":
+            return _gemini(chunk, key, src, tgt)
         if provider == "papago":
             return _papago(chunk, key, secret, src, tgt)
         if provider == "deepl":
