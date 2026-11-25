@@ -58,21 +58,64 @@ def make_client() -> httpx.Client:
     )
 
 
-def fetch_html(client: httpx.Client, url: str) -> str:
+def _decode(r: httpx.Response) -> str:
+    """Honour <meta charset> too: many Korean shops (e.g. domeggook) are EUC-KR without a header charset."""
+    if "charset=" in r.headers.get("content-type", "").lower():
+        return r.text
+    head = r.content[:4000].decode("ascii", "ignore")
+    m = re.search(r"charset=[\"']?([\w-]+)", head, re.I)
+    enc = (m.group(1) if m else "utf-8").lower()
+    try:
+        return r.content.decode(enc, "replace")
+    except LookupError:
+        return r.content.decode("utf-8", "replace")
+
+
+def fetch_html_ex(client: httpx.Client, url: str) -> tuple[str, str]:
+    """(html, final_url after redirects): relative links must resolve against the FINAL url."""
     r = client.get(url)
     r.raise_for_status()
-    if not r.encoding or r.encoding.lower() in ("iso-8859-1", "ascii"):
-        r.encoding = r.charset_encoding or "utf-8"
-    return r.text
+    return _decode(r), str(r.url)
 
 
-def parse_price_int(text: str) -> int | None:
+def fetch_html(client: httpx.Client, url: str) -> str:
+    return fetch_html_ex(client, url)[0]
+
+
+# ---- per-site rules for shops the generic crawler cannot read on its own
+SITE_RULES = {
+    "domeggook.com": {
+        "detail_re": re.compile(r"^(?:https?://[^/]+)?/\d{6,9}\?from=lstGen", re.I),
+        "cat_re": re.compile(r"itemList\.php\?[^#]*\bca=[\d_]+", re.I),
+        "cats_only": True,       # the home page lists banners, not the catalog: crawl categories
+        "max_targets": 400,
+        "page_param": "pg",
+        "title_strip": [r"^\[[^\]]{1,12}\]\s*"],
+        "price_sel": ["#lItemPrice"],
+        "price_from_og_desc": True,
+        "og_only_images": True,  # other thumbnails on the page belong to different products
+    },
+}
+
+
+def rule_for(url: str) -> dict | None:
+    host = (urlparse(url).netloc or "").lower()
+    for dom, rule in SITE_RULES.items():
+        if host == dom or host.endswith("." + dom):
+            return rule
+    return None
+
+
+PRICE_PAT3 = re.compile(r"(?:₩|\bKRW\b)\s*([\d,]{3,})|([\d,]{3,})\s*(?:원|KRW)", re.I)
+
+
+def parse_price_int(text: str, loose: bool = False) -> int | None:
     candidates = []
-    for m in PRICE_PAT.finditer(text):
+    for m in (PRICE_PAT3 if loose else PRICE_PAT).finditer(text):
         raw = (m.group(1) or m.group(2) or "").replace(",", "")
         if raw.isdigit():
             v = int(raw)
-            if 500 <= v <= 50_000_000:
+            if (100 if loose else 500) <= v <= 50_000_000:
                 candidates.append(v)
     return min(candidates) if candidates else None
 
@@ -87,7 +130,16 @@ def _abs(base_url: str, href: str) -> str:
     return urljoin(base_url, href)
 
 
-def extract_listing_urls(html: str, base_url: str, limit: int) -> tuple[list[str], list[str]]:
+def _tidy(url: str) -> str:
+    """Drop tracking params that some shops put in links and then 404 on (e.g. godomall 'mtn=...')."""
+    u = urlparse(url)
+    if not u.query:
+        return url
+    q = [(k, v) for k, v in parse_qsl(u.query, keep_blank_values=True) if k.lower() not in ("mtn", "napm")]
+    return u._replace(query=urlencode(q)).geturl()
+
+
+def extract_listing_urls(html: str, base_url: str, limit: int, rule: dict | None = None) -> tuple[list[str], list[str]]:
     """Return (product detail urls, category list urls) found on a page."""
     soup = BeautifulSoup(html, "lxml")
     details, cats, seen = [], [], set()
@@ -95,11 +147,24 @@ def extract_listing_urls(html: str, base_url: str, limit: int) -> tuple[list[str
         href = (a["href"] or "").split("#")[0]
         if not href or href in seen:
             continue
+        if rule:
+            url = _tidy(_abs(base_url, href))
+            if url in seen:
+                continue
+            if rule["detail_re"].search(href):
+                seen.add(url)
+                details.append(url)
+            elif rule.get("cat_re") and rule["cat_re"].search(href):
+                seen.add(url)
+                cats.append(url)
+            continue
         if EXCLUDE_PAT.search(href):
             continue
-        url = _abs(base_url, href)
+        url = _tidy(_abs(base_url, href))
         if url in seen:
             continue
+        if DETAIL_PAT.search(href) and not re.search(r"\d", href):
+            continue  # e.g. bare /product/detail.html with no product id: not a product
         if DETAIL_PAT.search(href):
             seen.add(url)
             details.append(url)
@@ -225,48 +290,149 @@ def _clean(text: str) -> str:
     return t.replace("\u2014", "-").replace("\u2013", "-")
 
 
-def extract_product(html: str, page_url: str, generic: frozenset | set = frozenset()) -> dict | None:
+def _ld_nodes(obj):
+    """Every dict inside a JSON-LD blob (handles @graph, lists, hasVariant, offers)."""
+    if isinstance(obj, dict):
+        yield obj
+        for v in obj.values():
+            if isinstance(v, (dict, list)):
+                yield from _ld_nodes(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from _ld_nodes(v)
+
+
+def _ld_types(n: dict) -> list:
+    t = n.get("@type")
+    return t if isinstance(t, list) else [t]
+
+
+def _num(v) -> int | None:
+    try:
+        f = float(str(v).replace(",", "").strip())
+        return int(f) if f >= 1 else None
+    except Exception:
+        return None
+
+
+def _ld_product(soup, page_url: str, generic) -> dict | None:
+    """schema.org Product OR ProductGroup (cafe24 puts the name on the group and the variants,
+    with their offers and images, under hasVariant). Returns None when there is no usable name."""
+    group = prod = None
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            blob = json.loads(script.string or script.get_text() or "{}")
+        except Exception:
+            continue
+        for n in _ld_nodes(blob):
+            types = _ld_types(n)
+            if "ProductGroup" in types and not group:
+                group = n
+            elif "Product" in types and not prod:
+                prod = n
+    root = group or prod
+    if not root:
+        return None
+    title = _clean(str(root.get("name", "")))
+    if not title and prod:
+        title = _clean(str(prod.get("name", "")))
+    if not title or title in generic:
+        return None
+    nodes = [root] + [n for n in _ld_nodes(root) if n is not root and "Product" in _ld_types(n)]
+    prices, imgs = [], []
+    for n in nodes:
+        offs = n.get("offers") or {}
+        for o in (offs if isinstance(offs, list) else [offs]):
+            if isinstance(o, dict):
+                for key in ("price", "lowPrice"):
+                    v = _num(o.get(key))
+                    if v:
+                        prices.append(v)
+                if isinstance(o.get("image"), str):
+                    imgs.append(o["image"])
+        im = n.get("image")
+        for u in (im if isinstance(im, list) else [im]):
+            if isinstance(u, str) and u:
+                imgs.append(u)
+            elif isinstance(u, dict) and u.get("url"):
+                imgs.append(str(u["url"]))
+    gallery = list(dict.fromkeys(_abs(page_url, u) for u in imgs))
+    desc = _clean(str(root.get("description", "") or (prod or {}).get("description", "")))[:4000]
+    return {
+        "title": title,
+        "price": min(prices) if prices else None,
+        "description": desc,
+        "image": gallery[0] if gallery else None,
+        "gallery": gallery,
+    }
+
+
+PRICE_HIDDEN_PAT = re.compile(
+    r"(가입\s*후\s*(금액|가격)|회원\s*(공개|전용|만\s*(구매|확인))|로그인\s*후\s*(가격|금액|확인|구매)|(금액|가격)\s*(확인|비공개)|비회원\s*(가격|금액)|log\s*in\s*to\s*(see|view))",
+    re.I,
+)
+
+
+def clean_title(t: str, generic, rule: dict | None = None) -> str:
+    """Plain text name: no HTML fragments, no '[shop]' prefix, no ' - ShopName' suffix, no lead-time notes."""
+    t = t or ""
+    if "<" in t:
+        t = BeautifulSoup(t, "lxml").get_text(" ")
+    t = _clean(t)
+    for pat in (rule or {}).get("title_strip", []):
+        t = re.sub(pat, "", t).strip()
+    t = re.sub(r"\s*출고\s*까지.*$", "", t).strip()
+    m = re.match(r"^(.*\S)\s+[-|]\s+([^-|]{2,30})$", t)
+    if m and any(m.group(2).strip() in g for g in generic):
+        t = m.group(1).strip()
+    return t
+
+
+PRICE_SELECTORS = ["#span_product_price_text", ".item_price .price", "#span_product_price_sale", ".price_sale", ".sale_price", ".goods_price .price", ".price"]
+
+
+def _page_price(soup, rule: dict | None = None) -> int | None:
+    """Price shown on the product page itself (never a number scraped from the whole HTML)."""
+    og = lambda prop: (soup.find("meta", property=prop) or {}).get("content", "")
+    v = parse_price_int(og("product:price:amount") or "", loose=True) or _num(og("product:price:amount"))
+    if v:
+        return v
+    for sel in (rule or {}).get("price_sel", []) + PRICE_SELECTORS:
+        for el in soup.select(sel)[:4]:
+            txt = el.get_text(" ")
+            for m in re.finditer(r"[\d][\d,]{2,}", txt):
+                v = _num(m.group(0))
+                if v and 100 <= v <= 50_000_000:
+                    return v
+    if (rule or {}).get("price_from_og_desc"):
+        return parse_price_int(og("og:description") or "", loose=True)
+    return None
+
+
+def extract_product(html: str, page_url: str, generic: frozenset | set = frozenset(), rule: dict | None = None) -> dict | None:
     """JSON-LD (schema.org/Product) first, OpenGraph + price heuristics fallback.
     Also collects up to 3 gallery image URLs."""
     soup = BeautifulSoup(html, "lxml")
     data = {}
     gallery: list[str] = []
 
-    for script in soup.find_all("script", type="application/ld+json"):
-        try:
-            blob = json.loads(script.string or "{}")
-        except Exception:
-            continue
-        items = blob if isinstance(blob, list) else [blob]
-        for it in items:
-            if isinstance(it, dict) and it.get("@type") in ("Product", ["Product"]):
-                offers = it.get("offers") or {}
-                if isinstance(offers, list):
-                    offers = offers[0] if offers else {}
-                price = offers.get("price") or offers.get("lowPrice")
-                img = it.get("image")
-                img_list = img if isinstance(img, list) else ([img] if img else [])
-                if isinstance(offers.get("image"), str):
-                    img_list.append(offers["image"])
-                data = {
-                    "title": _clean(str(it.get("name", ""))),
-                    "price": int(float(str(price).replace(",", ""))) if price else None,
-                    "description": _clean(str(it.get("description", "")))[:4000],
-                    "image": _abs(page_url, str(img_list[0])) if img_list else None,
-                }
-                gallery = [_abs(page_url, str(u)) for u in img_list if u]
-                break
-        if data.get("title"):
-            break
+    ld = _ld_product(soup, page_url, generic)
+    if ld:
+        data = {k: v for k, v in ld.items() if k != "gallery"}
+        gallery = ld.get("gallery") or []
 
     if not data.get("title"):
         og = lambda prop: (soup.find("meta", property=prop) or {}).get("content", "")
         cands = []
-        for sel in ("#span_product_name", ".headingArea h2", ".infoArea h2", ".goods_name", ".item_detail_tit", ".prd_name", "h1", "h2.title"):
+        for sel in ("#span_product_name", ".headingArea h2", ".infoArea h2", ".goods_name", ".item_detail_tit", ".prd_name"):
             el = soup.select_one(sel)
             if el and el.get_text(strip=True):
                 cands.append(_clean(el.get_text(" ")))
         cands += [_clean(og("og:title")), _clean(soup.title.string if soup.title else "")]
+        for sel in ("h1", "h2.title"):
+            el = soup.select_one(sel)
+            if el and el.get_text(strip=True):
+                cands.append(_clean(el.get_text(" ")))
         # first candidate that is not the site-wide title (some shops return the same og:title on every page)
         title = next((c for c in cands if c and c not in generic), "")
         if not title:
@@ -274,24 +440,15 @@ def extract_product(html: str, page_url: str, generic: frozenset | set = frozens
         desc = _clean(og("og:description") or "")
         img = og("og:image")
         gallery = [_abs(page_url, u) for u in (img, og("og:image:secure_url")) if u]
-        price = parse_price_int(og("product:price:amount") or "")
-        if not price:
-            for sel in ("#span_product_price_text", "#span_product_price_sale", ".price_sale", ".sale_price", ".price"):
-                el = soup.select_one(sel)
-                if el:
-                    price = parse_price_int(el.get_text(" ") + "원") or (int(re.sub(r"\D", "", el.get_text())) if re.sub(r"\D", "", el.get_text()).isdigit() and 500 <= int(re.sub(r"\D", "", el.get_text())) <= 50_000_000 else None)
-                    if price:
-                        break
-        price = price or parse_price_int(html)
         data = {
             "title": title,
-            "price": price,
+            "price": None,
             "description": desc[:4000],
             "image": _abs(page_url, img) if img else None,
         }
 
     # Gallery candidates from common product-image markup (cafe24 / godomall / custom shops)
-    if len(gallery) < 3:
+    if len(gallery) < 3 and not (rule or {}).get("og_only_images"):
         for im in soup.find_all("img", src=True):
             src = im.get("src") or ""
             if not src or src.startswith("data:"):
@@ -307,11 +464,17 @@ def extract_product(html: str, page_url: str, generic: frozenset | set = frozens
                 break
 
     if not data.get("price"):
-        data["price"] = parse_price_int(html)
+        data["price"] = _page_price(soup, rule)
+    if not data.get("price"):
+        # No price on the page itself: members-only, or a layout we cannot read. Never guess one
+        # (numbers elsewhere on the page are shipping fees, banners, etc.).
+        data["price_hidden"] = True
     if not data.get("title"):
         return None
     # Split "상품명 : 옵션" style noise
-    data["title"] = re.split(r"\s*[:：]\s*(?:상세|상품)?\s*페이지", data["title"])[0]
+    data["title"] = clean_title(re.split(r"\s*[:：]\s*(?:상세|상품)?\s*페이지", data["title"])[0], generic, rule)
+    if not data["title"] or data["title"] in generic:
+        return None
     data["images"] = list(dict.fromkeys(gallery))[:3]
     return data
 
@@ -364,7 +527,7 @@ def unique_slug(db: Session, base: str, seed: str) -> str:
 
 
 ID_KEYS = {"product_no", "goodsno", "goods_no", "branduid", "uid", "productno", "itemno", "product_code", "idx", "no", "id", "pno", "gno"}
-DROP_KEYS = {"cate_no", "display_group", "napm", "page", "sort_method", "ref", "category", "cate", "sort", "list_type"}
+DROP_KEYS = {"cate_no", "display_group", "napm", "page", "pg", "sort_method", "ref", "category", "cate", "sort", "list_type", "from", "advcnt", "mtn"}
 
 
 def canon_url(url: str) -> str:
@@ -378,14 +541,16 @@ def canon_url(url: str) -> str:
     return f"{u.netloc.lower()}{path}?{urlencode(sorted(keep))}"
 
 
-def _page_url(base: str, n: int) -> str:
-    m = _page_pattern_in(base)
+def _page_url(base: str, n: int, param: str = "page") -> str:
+    m = re.search(r"([?&])(pg|page)=\d+", base) or _page_pattern_in(base)
+    if m and m.re.pattern.startswith("([?&])"):
+        return re.sub(r"([?&])(pg|page)=\d+", lambda mm: f"{mm.group(1)}{mm.group(2)}={n}", base, count=1)
     if m:
         digits = re.search(r"\d+", m.group(0)).group(0)
         return base.replace(m.group(0), m.group(0)[: -len(digits)] + str(n), 1)
     if n <= 1:
         return base
-    return f"{base}{'&' if '?' in base else '?'}page={n}"
+    return f"{base}{'&' if '?' in base else '?'}{param}={n}"
 
 
 def _k(url: str) -> str:
@@ -411,7 +576,7 @@ def site_signature(html: str, source_name: str) -> set:
     return {x for x in out if x}
 
 
-def crawl_step(client, state: dict, listing_url: str, known: set, want: int, pages_budget: int, deadline: float | None) -> tuple[list[str], dict, str]:
+def crawl_step(client, state: dict, listing_url: str, known: set, want: int, pages_budget: int, deadline: float | None, rule: dict | None = None) -> tuple[list[str], dict, str]:
     """Resumable crawl. state persists where the previous run stopped, so each run goes deeper
     instead of re-reading the same first page. Returns (new product urls, new state, note)."""
     new: list[str] = []
@@ -420,16 +585,23 @@ def crawl_step(client, state: dict, listing_url: str, known: set, want: int, pag
     def fetch_list(u: str):
         try:
             time.sleep(random.uniform(0.1, 0.3))
-            return extract_listing_urls(fetch_html(client, u), u, 5000)
-        except Exception:
+            html_u, final_u = fetch_html_ex(client, u)
+            return extract_listing_urls(html_u, final_u, 5000, rule)
+        except Exception as e:
+            fetch_list.last_error = f"{type(e).__name__}: {str(e)[:140]}"
             return None
+    fetch_list.last_error = ""
 
     if not state.get("targets"):
         first = fetch_list(listing_url)
         if first is None:
-            raise RuntimeError("Could not open the listing page")
+            raise RuntimeError("Could not open the listing page (" + (fetch_list.last_error or "no response") + ")")
         details, cats = first
-        if CATEGORY_PAT.search(listing_url) or not cats:
+        if rule and rule.get("cats_only"):
+            targets = list(dict.fromkeys(cats))[: int(rule.get("max_targets", 80))]
+            if not targets:
+                raise RuntimeError("No category links found on the start page")
+        elif CATEGORY_PAT.search(listing_url) or not cats:
             targets = [listing_url]
         else:
             targets = [listing_url] + cats[:80]
@@ -445,7 +617,7 @@ def crawl_step(client, state: dict, listing_url: str, known: set, want: int, pag
                 break
             base = state["targets"][state["ti"]]
             nums = list(range(state["page"], state["page"] + 4))
-            results = list(pool.map(lambda n: (n, fetch_list(_page_url(base, n))), nums))
+            results = list(pool.map(lambda n: (n, fetch_list(_page_url(base, n, (rule or {}).get("page_param", "page")))), nums))
             exhausted = False
             for n, res in results:
                 pages += 1
@@ -519,6 +691,78 @@ def dedupe_source(db: Session, source_id: int) -> int:
     return removed
 
 
+LOGIN_PATHS = ["/member/login.html", "/member/login.php", "/shop/member/login.php", "/member/login", "/login", "/user/login", "/shop/member/login.html", "/bbs/login.php"]
+
+
+def login_session(client: httpx.Client, lg: dict, base_url: str) -> tuple[bool, str]:
+    """Sign in with a wholesale account so member-only prices become visible.
+    Finds the login form (the one with a password field), submits it, keeps the session cookies in
+    the client, and checks the home page for a logout link. Returns (ok, short message)."""
+    from urllib.parse import urljoin
+
+    uid, pw = (lg.get("id") or "").strip(), lg.get("password") or ""
+    if not uid or not pw:
+        return False, "no login configured"
+    u = urlparse(base_url)
+    origin = f"{u.scheme}://{u.netloc}"
+    cands: list[str] = []
+    if lg.get("url"):
+        cands.append(lg["url"])
+    try:
+        home_html, home_url = fetch_html_ex(client, origin + "/")
+        for a in BeautifulSoup(home_html, "lxml").find_all("a", href=True):
+            if re.search(r"login", a["href"], re.I) and not re.search(r"logout|naver|kakao|google|facebook", a["href"], re.I):
+                cands.append(urljoin(home_url, a["href"]))
+    except Exception:
+        pass
+    cands += [origin + p for p in LOGIN_PATHS]
+    last = "no login form found"
+    tried = set()
+    for cu in cands:
+        if cu in tried or len(tried) >= 10:
+            continue
+        tried.add(cu)
+        try:
+            r = client.get(cu)
+            if r.status_code >= 400:
+                continue
+            soup = BeautifulSoup(_decode(r), "lxml")
+            forms = [f for f in soup.find_all("form") if f.find("input", {"type": "password"})]
+            if not forms:
+                continue
+            form = forms[0]
+            payload: dict = {}
+            for inp in form.find_all(["input", "textarea"]):
+                name = inp.get("name")
+                typ = (inp.get("type") or "text").lower()
+                if not name or typ in ("submit", "button", "image", "file", "password"):
+                    continue
+                if typ in ("checkbox", "radio"):
+                    if inp.has_attr("checked"):
+                        payload[name] = inp.get("value", "on")
+                    continue
+                payload[name] = inp.get("value", "")
+            pw_name = form.find("input", {"type": "password"}).get("name")
+            texts = [i for i in form.find_all("input") if (i.get("type") or "text").lower() in ("text", "email", "tel") and i.get("name")]
+            id_name = next((i["name"] for i in texts if re.search(r"id|email|user|login|member", i["name"], re.I)), texts[0]["name"] if texts else None)
+            if not pw_name or not id_name:
+                continue
+            payload[id_name], payload[pw_name] = uid, pw
+            action = urljoin(str(r.url), form.get("action") or str(r.url))
+            if (form.get("method") or "post").lower() == "get":
+                resp = client.get(action, params=payload)
+            else:
+                resp = client.post(action, data=payload, headers={"Referer": str(r.url)})
+            home = _decode(client.get(origin + "/"))
+            if re.search(r"로그아웃|logout|sign\s*out", home, re.I):
+                return True, "logged in"
+            alert = re.search(r"alert\(['\"]([^'\"]{3,80})", resp.text or "")
+            last = f"login rejected ({alert.group(1)})" if alert else "login form submitted but the site did not accept it"
+        except Exception as e:
+            last = f"{type(e).__name__}: {str(e)[:80]}"
+    return False, last
+
+
 def scrape_source(db: Session, source: models.Source, trigger: str = "manual", deadline: float | None = None) -> models.ScrapeLog:
     """deadline: epoch seconds after which no new product pages are fetched (serverless time limit)."""
     deadline = deadline or (time.time() + 240)
@@ -532,7 +776,7 @@ def scrape_source(db: Session, source: models.Source, trigger: str = "manual", d
     listing_url = cfg.get("listing_url") or source.url
     max_items = int(cfg.get("max_products") or get_setting(db, "scrape_max_products_per_run", 500))
     pages_budget = max(60, int(cfg.get("max_pages") or 0))
-    new_count = auth_walls = dup_skipped = generic_skipped = 0
+    new_count = auth_walls = dup_skipped = generic_skipped = hidden_prices = 0
     errors: list[str] = []
 
     if not listing_url:
@@ -543,11 +787,47 @@ def scrape_source(db: Session, source: models.Source, trigger: str = "manual", d
 
     try:
         client = make_client()
+        rule = rule_for(listing_url)
+        lg = cfg.get("login") or {}
+        login_note = ""
+        logged_in = False
+        if lg.get("id") and lg.get("password"):
+            logged_in, msg = login_session(client, lg, listing_url)
+            if not logged_in:
+                log.status, log.new_products, log.updated_products = "error", 0, 0
+                log.message = f"Login failed: {msg}. Check the account id/password in this source's settings."
+                log.finished_at = datetime.now(timezone.utc)
+                source.status, source.last_error, source.last_scraped_at = "error", log.message[:500], datetime.now(timezone.utc)
+                db.commit()
+                client.close()
+                return log
+            login_note = "logged in"
         removed = 0
         try:
             removed = dedupe_source(db, source.id)
         except Exception:
             db.rollback()
+
+        try:
+            generic0 = site_signature(fetch_html(client, listing_url), source.name)
+        except Exception:
+            generic0 = {_clean(source.name)}
+        purged = 0
+        try:
+            junk = [r[0] for r in db.query(models.Product.id).filter(models.Product.source_id == source.id, models.Product.title_ko.in_(list(generic0))).all()]
+            for i in range(0, len(junk), 200):
+                chunk = junk[i : i + 200]
+                ordered = {r[0] for r in db.query(models.OrderItem.product_id).filter(models.OrderItem.product_id.in_(chunk)).all()}
+                gone = [x for x in chunk if x not in ordered]
+                if gone:
+                    db.query(models.Product).filter(models.Product.id.in_(gone)).delete(synchronize_session=False)
+                    purged += len(gone)
+                if ordered:
+                    db.query(models.Product).filter(models.Product.id.in_(list(ordered))).update({models.Product.status: "archived"}, synchronize_session=False)
+            db.commit()
+        except Exception:
+            db.rollback()
+        removed += purged
 
         # what we already have: never re-fetch these
         known: set[str] = set()
@@ -558,21 +838,19 @@ def scrape_source(db: Session, source: models.Source, trigger: str = "manual", d
             img = (images or [""])[0] if isinstance(images, list) else ""
             fps.add((title, img.rsplit("/", 1)[-1].split(".")[0]))
 
-        try:
-            generic = site_signature(fetch_html(client, listing_url), source.name)
-        except Exception:
-            generic = {_clean(source.name)}
+        generic = generic0
 
         state = dict(cfg.get("crawl") or {})
-        skip = list(cfg.get("skip") or [])
+        skip = [] if logged_in else list(cfg.get("skip") or [])
         known |= set(skip)
         pending = [u for u in state.pop("pending", []) if _k(u) not in known]
-        found, state, note = crawl_step(client, state, listing_url, known | {_k(u) for u in pending}, max_items, pages_budget, deadline)
+        found, state, note = crawl_step(client, state, listing_url, known | {_k(u) for u in pending}, max_items, pages_budget, deadline, rule)
         product_urls = (pending + found)
         if not product_urls:
-            if note == "full pass finished":
+            have = db.query(models.Product).filter(models.Product.source_id == source.id).count()
+            if note == "full pass finished" and have > 0:
                 log.status, log.new_products, log.updated_products = "ok", 0, 0
-                log.message = f"Nothing new: all products found so far are already saved ({len(known)}). Next run re-checks from the first page."
+                log.message = f"Nothing new: all {have} products found so far are already saved. Next run re-checks from the first page."
                 source.status, source.last_scraped_at, source.last_error = "ok", datetime.now(timezone.utc), ""
                 cfg["crawl"] = state
                 source.config = cfg
@@ -580,7 +858,7 @@ def scrape_source(db: Session, source: models.Source, trigger: str = "manual", d
                 db.commit()
                 client.close()
                 return log
-            raise RuntimeError("No product links found - may need a platform-specific adapter")
+            raise RuntimeError("The listing page opened but no product links were found. The shop may load its products with JavaScript or use a layout this scraper does not know yet.")
 
         category_id = cfg.get("category_id") or None
         cat_slug = "general"
@@ -594,7 +872,9 @@ def scrape_source(db: Session, source: models.Source, trigger: str = "manual", d
                 page = fetch_html(client, url)
                 if len(page) < 800 and ("회원" in page or "login" in page.lower() or "log-in" in page.lower()):
                     return ("auth", url, None, None)
-                item = extract_product(page, url, generic)
+                item = extract_product(page, url, generic, rule)
+                if item and item.get("price_hidden") and not item.get("price"):
+                    return ("hidden", url, None, None)
                 if not item or not item.get("price"):
                     return ("skip", url, None, None)
                 imgs = fetch_image_bytes(client, item.get("images") or ([item.get("image")] if item.get("image") else []))
@@ -616,6 +896,10 @@ def scrape_source(db: Session, source: models.Source, trigger: str = "manual", d
                         continue
                     if kind == "err":
                         errors.append(item)
+                        continue
+                    if kind == "hidden":
+                        hidden_prices += 1
+                        skip.append(_k(url))
                         continue
                     if kind != "ok":
                         generic_skipped += 1
@@ -673,6 +957,8 @@ def scrape_source(db: Session, source: models.Source, trigger: str = "manual", d
         client.close()
 
         message = f"{new_count} new products saved ({len(product_urls)} candidate pages checked, {len(leftover)} queued for next run)"
+        if login_note:
+            message += f" | {login_note}"
         if note:
             message += f" | {note}"
         if removed:
@@ -681,6 +967,8 @@ def scrape_source(db: Session, source: models.Source, trigger: str = "manual", d
             message += f" | {dup_skipped} duplicates skipped"
         if generic_skipped:
             message += f" | {generic_skipped} pages skipped (not real product pages or no price)"
+        if hidden_prices:
+            message += f" | {hidden_prices} pages skipped: no readable price (members only)"
         if auth_walls:
             message += f" | {auth_walls} members-only pages (login required)"
         if errors:
@@ -689,6 +977,11 @@ def scrape_source(db: Session, source: models.Source, trigger: str = "manual", d
             log.status, log.new_products, log.updated_products, log.message = (
                 "error", 0, 0,
                 "All product pages are members-only (login required) - source cannot be scraped without credentials",
+            )
+        elif new_count == 0 and hidden_prices and hidden_prices >= processed - auth_walls - len(errors) - 1:
+            log.status, log.new_products, log.updated_products, log.message = (
+                "error", 0, 0,
+                ("Login worked but no price could be read on these pages. " if logged_in else "This supplier hides wholesale prices until you log in (members only): add your wholesale account in this source's settings. ") + "Nothing was saved because the scraper will not guess a price. " + message,
             )
         elif new_count == 0 and processed and not dup_skipped:
             log.status, log.new_products, log.updated_products, log.message = (

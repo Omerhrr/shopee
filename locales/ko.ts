@@ -204,7 +204,13 @@ export default {
       maxPages: '한 번에 수집할 목록 페이지 수',
       mapCategory: '쇼핑몰 카테고리 매핑',
       contact: '연락처',
-      notes: '메모'
+      notes: '메모',
+      loginTitle: '도매 계정 (선택)',
+      loginHint: '많은 공급처는 로그인해야 가격을 보여줍니다. 이 공급처에 가입한 계정을 입력하면 스크래퍼가 가격을 읽을 수 있습니다. 서버에만 저장되며 다시 표시되지 않습니다.',
+      loginId: '계정 아이디 또는 이메일',
+      loginPassword: '비밀번호',
+      loginSaved: '저장됨 - 비워두면 유지됩니다',
+      loginUrl: '로그인 페이지 URL (자동으로 찾지 못할 때만)'
     },
     testResults: '상품 링크 {n}개 발견. 샘플:',
     schedule: '자동 업데이트 주기',

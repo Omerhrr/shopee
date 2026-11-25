@@ -192,11 +192,81 @@ def seed_demo_products(db: Session):
 # Sources verified reachable + scrapable (probe run against the live sites).
 # Each gets a listing config so the generic scraper can pull products.
 VERIFIED_SOURCES = [
-    "가방쟁이", "니은상사", "가구도매닷컴", "리얼백", "커먼샵(가방장인)",
-    "크레이지리스트", "소품마켓", "엄마애손", "펫토리", "펫모닝",
-    "나이스펫", "논다", "루시룩", "제이스윗", "더파란", "트라이코지",
-    "소소홈", "리얼몰", "일호스토어", "VIVA DAY",
+    "리얼백", "소품마켓", "커먼샵(가방장인)", "크레이지리스트", "펫모닝", "펫토리", "도매꾹", "오너클랜",
+    "온채널", "도매콜", "도매로", "젠트레이드", "신상마켓", "펀타스틱",
 ]
+
+# The supplier list the store works with: matched by website, so duplicates and renamed rows are handled.
+KEEP_DOMAINS = [
+    "realbag.kr", "asopoom.com", "comeonshop.co.kr", "crazylist.co.kr", "petmorning45.cafe24.com", "pettory.com",
+    "domeggook.com", "ownerclan.com", "onch3.co.kr", "domecall.net", "domero.net", "domebookmark.com",
+    "zentrade.co.kr", "sinsangmarket.kr", "funtasticb2b.co.kr",
+]
+PREFERRED_NAMES = {"젠트레이드", "펀타스틱", "오너클랜", "소품마켓"}
+DISABLED_DOMAINS = {"domebookmark.com"}  # the domain now serves an unrelated site: kept in the list but never scraped
+LISTING_OVERRIDES = {"realbag.kr": "https://www.realbag.kr/product/list.html?cate_no=150"}
+
+
+def _domain_of(url: str) -> str:
+    from urllib.parse import urlparse
+
+    host = (urlparse(url or "").netloc or "").lower()
+    for d in KEEP_DOMAINS:
+        if host == d or host.endswith("." + d):
+            return d
+    return ""
+
+
+def trim_sources(db: Session) -> dict:
+    """One-time: keep only the chosen suppliers. Everything else is removed together with its products
+    (products that appear in orders are archived instead, so order history stays intact)."""
+    if db.query(models.Setting).filter(models.Setting.key == "_sources_trimmed_v1").first():
+        return {"skipped": True}
+    sources = db.query(models.Source).order_by(models.Source.id).all()
+    keep: dict[str, models.Source] = {}
+    for src in sources:
+        d = _domain_of(src.url) or _domain_of((src.config or {}).get("listing_url", ""))
+        if not d:
+            continue
+        cur = keep.get(d)
+        if cur is None or (src.name in PREFERRED_NAMES and cur.name not in PREFERRED_NAMES):
+            keep[d] = src
+    keep_ids = {x.id for x in keep.values()}
+    removed_sources = removed_products = 0
+    for src in sources:
+        if src.id in keep_ids:
+            continue
+        pids = [r[0] for r in db.query(models.Product.id).filter(models.Product.source_id == src.id).all()]
+        for i in range(0, len(pids), 200):
+            chunk = pids[i : i + 200]
+            ordered = {r[0] for r in db.query(models.OrderItem.product_id).filter(models.OrderItem.product_id.in_(chunk)).all()}
+            gone = [x for x in chunk if x not in ordered]
+            if gone:
+                db.query(models.Product).filter(models.Product.id.in_(gone)).delete(synchronize_session=False)
+                removed_products += len(gone)
+            if ordered:
+                db.query(models.Product).filter(models.Product.id.in_(list(ordered))).update(
+                    {models.Product.source_id: None, models.Product.status: "archived"}, synchronize_session=False
+                )
+        db.delete(src)
+        removed_sources += 1
+    for d, src in keep.items():
+        cfg = dict(src.config or {})
+        cfg.pop("crawl", None)
+        cfg.pop("skip", None)
+        cfg["listing_url"] = LISTING_OVERRIDES.get(d) or cfg.get("listing_url") or src.url
+        cfg["max_products"] = max(int(cfg.get("max_products") or 0), 2000)
+        src.config = cfg
+        src.adapter = "generic"
+        src.status, src.last_error = "new", ""
+        src.enabled = d not in DISABLED_DOMAINS
+        if d in DISABLED_DOMAINS:
+            src.notes = ((src.notes or "") + " | Domain now serves an unrelated site: disabled.").strip(" |")
+    db.add(models.Setting(key="_sources_trimmed_v1", value=True))
+    db.commit()
+    return {"removed_sources": removed_sources, "removed_products": removed_products, "kept": len(keep)}
+
+
 
 
 def enable_verified_sources(db: Session) -> int:
@@ -227,6 +297,7 @@ def ensure_seed(db: Session):
     seed_admin(db)
     seed_categories(db)
     seed_sources(db)
+    trim_sources(db)
     enable_verified_sources(db)
     # Demo catalog seeding removed (real data only): seed_demo_products is no
     # longer called. The function is kept for reference/debugging but guarded

@@ -207,7 +207,13 @@ export default {
       maxPages: 'Listing pages per run',
       mapCategory: 'Storefront category',
       contact: 'Contact',
-      notes: 'Notes'
+      notes: 'Notes',
+      loginTitle: 'Wholesale account (optional)',
+      loginHint: 'Many suppliers only show prices after you log in. Enter the account you hold with this supplier so the scraper can read prices. It is stored on your server and never shown again.',
+      loginId: 'Account ID or email',
+      loginPassword: 'Password',
+      loginSaved: 'Saved - leave empty to keep it',
+      loginUrl: 'Login page URL (only if it is not found automatically)'
     },
     testResults: 'Found {n} product links. Samples:',
     // scraping

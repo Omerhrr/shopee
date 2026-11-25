@@ -106,6 +106,15 @@ def order_public(o: models.Order) -> dict:
     }
 
 
+def _public_config(cfg: dict) -> dict:
+    out = {k: v for k, v in (cfg or {}).items() if k not in ("crawl", "skip")}
+    lg = dict(out.get("login") or {})
+    if lg:
+        lg["password_set"] = bool(lg.pop("password", ""))
+        out["login"] = lg
+    return out
+
+
 def source_admin(s: models.Source) -> dict:
     return {
         "id": s.id,
@@ -122,7 +131,7 @@ def source_admin(s: models.Source) -> dict:
         "paid_membership": s.paid_membership,
         "requires_cafe": s.requires_cafe,
         "adapter": s.adapter,
-        "config": s.config or {},
+        "config": _public_config(s.config or {}),
         "enabled": s.enabled,
         "status": s.status,
         "last_scraped_at": s.last_scraped_at.isoformat() if s.last_scraped_at else None,

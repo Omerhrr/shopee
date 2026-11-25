@@ -36,7 +36,7 @@ const remove = async (s: AdminSource) => {
 // edit modal
 const showForm = ref(false)
 const editing = ref<AdminSource | null>(null)
-const form = reactive({ name: '', url: '', listing_url: '', max_products: 2000, max_pages: 20, category_id: null as number | null, contact: '', notes: '', enabled: false })
+const form = reactive({ name: '', url: '', listing_url: '', max_products: 2000, max_pages: 20, category_id: null as number | null, contact: '', notes: '', enabled: false, login_id: '', login_password: '', login_url: '', login_saved: false })
 
 const openEdit = (s: AdminSource) => {
   editing.value = s
@@ -49,7 +49,11 @@ const openEdit = (s: AdminSource) => {
     category_id: s.config?.category_id ?? null,
     contact: s.contact,
     notes: s.notes,
-    enabled: s.enabled
+    enabled: s.enabled,
+    login_id: s.config?.login?.id || '',
+    login_password: '',
+    login_url: s.config?.login?.url || '',
+    login_saved: !!s.config?.login?.password_set
   })
   showForm.value = true
 }
@@ -59,7 +63,13 @@ const save = async () => {
     name: form.name,
     url: form.url,
     adapter: 'generic',
-    config: { listing_url: form.listing_url || undefined, max_products: form.max_products, max_pages: form.max_pages, category_id: form.category_id },
+    config: {
+      listing_url: form.listing_url || undefined,
+      max_products: form.max_products,
+      max_pages: form.max_pages,
+      category_id: form.category_id,
+      login: { id: form.login_id, password: form.login_password, url: form.login_url || undefined }
+    },
     enabled: form.enabled,
     notes: form.notes,
     contact: form.contact
@@ -202,6 +212,15 @@ useHead({ title: () => t('admin.sources') })
             <option :value="null">-</option>
             <option v-for="c in cats || []" :key="c.id" :value="c.id">{{ locale === 'ko' ? c.name_ko : c.name_en }}</option>
           </select>
+        </div>
+        <div class="md:col-span-2 rounded-xl border border-ink-100 p-4 bg-ink-50">
+          <div class="font-bold text-ink-900 text-sm mb-1">{{ t('admin.sourceForm.loginTitle') }}</div>
+          <p class="text-xs text-ink-400 mb-3">{{ t('admin.sourceForm.loginHint') }}</p>
+          <div class="grid md:grid-cols-2 gap-3">
+            <div><span class="label">{{ t('admin.sourceForm.loginId') }}</span><input v-model="form.login_id" class="input" autocomplete="off" /></div>
+            <div><span class="label">{{ t('admin.sourceForm.loginPassword') }}</span><input v-model="form.login_password" type="password" class="input" autocomplete="new-password" :placeholder="form.login_saved ? t('admin.sourceForm.loginSaved') : ''" /></div>
+            <div class="md:col-span-2"><span class="label">{{ t('admin.sourceForm.loginUrl') }}</span><input v-model="form.login_url" class="input" placeholder="https://…/member/login.html" /></div>
+          </div>
         </div>
         <div><span class="label">{{ t('admin.sourceForm.contact') }}</span><input v-model="form.contact" class="input" /></div>
         <div class="flex items-end gap-3">

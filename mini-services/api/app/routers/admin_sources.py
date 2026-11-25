@@ -55,6 +55,29 @@ def create_source(body: SourceIn, db: Session = Depends(get_db)):
     return source_admin(s)
 
 
+def _merge_config(old: dict, new: dict) -> dict:
+    """The edit form only knows some keys: keep crawl progress, translations and the saved login password."""
+    lg = new.get("login")
+    if isinstance(lg, dict):
+        lg = dict(lg)
+        lg.pop("password_set", None)
+        if not (lg.get("id") or "").strip():
+            new.pop("login", None)  # empty account id removes the saved login
+        else:
+            if not lg.get("password"):
+                lg["password"] = (old.get("login") or {}).get("password", "")
+            new["login"] = lg
+    elif "login" in old:
+        new["login"] = old["login"]
+    for k in ("crawl", "skip", "name_en", "category_hint_en"):
+        if k in old and k not in new:
+            new[k] = old[k]
+    if (new.get("listing_url") or "") != (old.get("listing_url") or ""):
+        new.pop("crawl", None)
+        new.pop("skip", None)
+    return new
+
+
 @router.put("/sources/{sid}")
 def update_source(sid: int, body: SourceIn, db: Session = Depends(get_db)):
     s = db.query(models.Source).filter(models.Source.id == sid).first()
@@ -64,7 +87,7 @@ def update_source(sid: int, body: SourceIn, db: Session = Depends(get_db)):
     s.name = body.name
     s.url = body.url
     s.adapter = body.adapter
-    s.config = body.config
+    s.config = _merge_config(dict(s.config or {}), dict(body.config or {}))
     s.enabled = body.enabled
     s.notes = body.notes
     s.contact = body.contact
