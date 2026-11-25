@@ -81,34 +81,60 @@ def clean_svg(blob: bytes) -> bytes:
     return t.encode("utf-8")
 
 
-def fetch_remote(url: str, timeout: float = 12.0, allow_svg: bool = False) -> tuple[bytes, str] | None:
-    """Fetch one image: http(s) only, public hosts only, redirects re-checked, size and type limited."""
+def _referers(u) -> list:
+    """Hotlink protection usually checks the shop's own domain: try the image host, its parent domain, then none."""
+    host = u.hostname or ""
+    parts = host.split(".")
+    out = [f"{u.scheme}://{u.netloc}/"]
+    if len(parts) > 2:
+        base = ".".join(parts[-3:] if parts[-2] in ("co", "or", "go", "ne") else parts[-2:])
+        out += [f"{u.scheme}://{base}/", f"{u.scheme}://www.{base}/"]
+    out.append("")
+    return out
+
+
+def fetch_remote(url: str, timeout: float = 12.0, allow_svg: bool = False, why: list | None = None) -> tuple[bytes, str] | None:
+    """Fetch one image: http(s) only, public hosts only, redirects re-checked, size and type limited.
+    `why` (optional list) receives the reason when nothing could be fetched."""
+    def fail(msg):
+        if why is not None:
+            why.append(msg)
+        return None
+
     cur = url.strip()
     try:
-        with httpx.Client(headers={"User-Agent": UA, "Accept": "image/*,*/*"}, timeout=timeout, follow_redirects=False) as c:
+        with httpx.Client(headers={"User-Agent": UA, "Accept": "image/avif,image/webp,image/*,*/*;q=0.8", "Accept-Language": "ko-KR,ko;q=0.9"}, timeout=timeout, follow_redirects=False) as c:
             for _ in range(4):
                 u = urlparse(cur)
-                if u.scheme not in ("http", "https") or not u.hostname or u.port not in (None, 80, 443) or not _public_host(u.hostname):
-                    return None
-                r = c.get(cur, headers={"Referer": f"{u.scheme}://{u.netloc}/"})
+                if u.scheme not in ("http", "https") or not u.hostname or u.port not in (None, 80, 443):
+                    return fail("bad url")
+                if not _public_host(u.hostname):
+                    return fail("host not resolvable/public")
+                r = None
+                for ref in _referers(u):
+                    r = c.get(cur, headers={"Referer": ref} if ref else {})
+                    if r.status_code not in (401, 403, 406):
+                        break
                 if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("location"):
                     cur = str(httpx.URL(cur).join(r.headers["location"]))
                     continue
                 ct = (r.headers.get("content-type") or "").split(";")[0].strip().lower()
                 if r.status_code != 200:
-                    return None
+                    return fail(f"supplier answered {r.status_code}")
                 if _looks_svg(r, ct, cur):
                     if not allow_svg or len(r.content) > MAX_BYTES:
-                        return None
+                        return fail("svg not allowed")
                     return clean_svg(r.content), "image/svg+xml"
                 if not ct.startswith("image/"):
-                    return None
-                if len(r.content) < 400 or len(r.content) > MAX_BYTES:
-                    return None
+                    return fail(f"not an image ({ct or 'no type'})")
+                if len(r.content) < 400:
+                    return fail(f"too small ({len(r.content)} bytes)")
+                if len(r.content) > MAX_BYTES:
+                    return fail("too large")
                 return r.content, ct
-    except Exception:
-        return None
-    return None
+            return fail("too many redirects")
+    except Exception as e:
+        return fail(f"{type(e).__name__}: {str(e)[:80]}")
 
 
 def _normalise(blob: bytes, ct: str) -> tuple[bytes, str] | None:

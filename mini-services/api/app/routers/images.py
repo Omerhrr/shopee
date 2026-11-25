@@ -22,9 +22,11 @@ def image_relay(u: str = "", s: str = ""):
     url = unquote(u or "")
     if not url or not hmac.compare_digest(sign(url), s or ""):
         return Response(status_code=403)
-    hit = fetch_remote(url, timeout=10.0, allow_svg=True)
+    why: list = []
+    hit = fetch_remote(url, timeout=10.0, allow_svg=True, why=why)
     if not hit:
-        return Response(_PLACEHOLDER, media_type="image/svg+xml", headers={**_SAFE_HEADERS, "Cache-Control": "public, max-age=300"})
+        reason = (why[0] if why else "unknown").encode("ascii", "ignore").decode()
+        return Response(_PLACEHOLDER, media_type="image/svg+xml", headers={**_SAFE_HEADERS, "Cache-Control": "public, max-age=60", "X-Img-Error": reason})
     blob, ct = hit
     return Response(
         blob,
