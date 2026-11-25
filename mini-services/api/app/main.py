@@ -10,7 +10,7 @@ from . import models  # noqa: F401 (loads models for table creation)
 from .config import IS_VERCEL
 from .services import media_store
 from .database import Base, SessionLocal, engine
-from .routers import admin_catalog, admin_export, admin_finance, admin_settings, admin_sources, auth, catalog, cron, orders, scraper
+from .routers import admin_catalog, admin_export, admin_finance, admin_settings, admin_sources, auth, catalog, cron, images, orders, scraper
 from .services.scheduler import start_scheduler
 from .services.seed_service import ensure_seed
 
@@ -59,6 +59,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(images.router)
 app.include_router(catalog.router)
 app.include_router(orders.router)
 app.include_router(auth.router)

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from .. import models
 from ..services import media_store
+from ..services.images import unproxy
 from ..database import get_db
 from ..deps import get_current_admin
 from ..serializers import product_admin
@@ -144,7 +145,7 @@ def create_product(body: ProductIn, db: Session = Depends(get_db)):
         slug = f"{base}-{i}"
 
     # Auto-generate a placeholder image if none provided
-    images = [img for img in body.images if img]
+    images = [unproxy(img) for img in body.images if img]
     if not images:
         cat = db.query(models.Category).filter(models.Category.id == body.category_id).first()
         cat_slug = cat.slug if cat else "general"
@@ -197,7 +198,7 @@ def update_product(pid: int, body: ProductIn, db: Session = Depends(get_db)):
     p.price_cost = body.price_cost
     p.markup_override = body.markup_override
     if body.images:
-        p.images = [img for img in body.images if img]
+        p.images = [unproxy(img) for img in body.images if img]
     p.status = body.status
     p.category_id = body.category_id
     p.stock_status = body.stock_status

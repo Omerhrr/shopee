@@ -26,6 +26,7 @@ from starlette.background import BackgroundTask
 
 from .. import models
 from ..services import media_store
+from ..services.images import fetch_download_images, fetch_download_images_many, proxy_path, proxy_url, unproxy
 from ..services.translator import ensure_translated
 from ..database import get_db
 from ..deps import get_current_admin, get_setting
@@ -102,9 +103,9 @@ def listings(
                 "title_en": (p.title_en or "").strip(),
                 "price_cost": p.price_cost,
                 "price_sell": p.price_sell,
-                "thumb": imgs[0] if imgs else "",
+                "thumb": proxy_url(imgs[0]) if imgs else "",
                 "image_count": len(imgs),
-                "images": imgs,
+                "images": [proxy_url(i) for i in imgs],
                 "desc_ko": p.desc_ko or "",
                 "desc_en": (p.desc_en or "").strip(),
                 "status": p.status,
@@ -143,23 +144,9 @@ def categories(db: Session = Depends(get_db)):
 
 
 def _local_files(images: list) -> list[tuple[bytes, str]]:
-    """Stored images -> [(bytes, ext)], de-duplicated, only Shopee-friendly formats."""
-    out: list[tuple[bytes, str]] = []
-    seen: set[str] = set()
-    for e in images or []:
-        if not isinstance(e, str) or not e.strip() or e.startswith(("http://", "https://")):
-            continue
-        rel = media_store.clean_rel(e)
-        if rel in seen:
-            continue
-        seen.add(rel)
-        ext = os.path.splitext(rel)[1].lower()
-        if ext not in ALLOWED_EXT:
-            continue
-        hit = media_store.load(rel)
-        if hit and len(hit[0]) > 512:
-            out.append((hit[0], ".jpg" if ext == ".jpeg" else ext))
-    return out
+    """Product images as [(bytes, ext)]: fetched from the supplier at download time (we store only the URL);
+    older products that still have a stored copy are read from storage."""
+    return fetch_download_images(images, limit=5)
 
 
 def _zip_enabled(db: Session) -> bool:
@@ -214,7 +201,7 @@ def package(body: PackageIn, db: Session = Depends(get_db)):
         desc = (p.desc_en or "").strip() or (p.desc_ko or "").strip()
     files = _local_files(p.images or [])
     if not files:
-        raise HTTPException(422, "No local images available for this listing")
+        raise HTTPException(422, "The supplier image could not be downloaded right now. Try again in a moment.")
 
     data = {
         "sku": sku,
@@ -238,8 +225,8 @@ def package(body: PackageIn, db: Session = Depends(get_db)):
     urls = []
     for img in data["images"]:
         if isinstance(img, str) and img.strip():
-            u = img.strip()
-            urls.append(u if u.startswith(("http://", "https://")) else body.public_base.rstrip("/") + "/" + u.lstrip("/"))
+            u = unproxy(img.strip())
+            urls.append(body.public_base.rstrip("/") + proxy_path(u) if u.startswith(("http://", "https://")) else body.public_base.rstrip("/") + "/" + u.lstrip("/"))
         if len(urls) >= 5:
             break
     imgs = list(urls) + [""] * (5 - len(urls))
@@ -294,7 +281,7 @@ def package(body: PackageIn, db: Session = Depends(get_db)):
 
 # ---------------------------------------------------------------- bulk selection
 MAX_IDS = 5000          # "select all results" cap
-MAX_PACKAGE_ITEMS = 150  # products per ZIP (memory / time limits on serverless hosts)
+MAX_PACKAGE_ITEMS = 100  # products per ZIP: images are fetched live from the suppliers (time limit on serverless hosts)
 
 
 def _filtered_query(db: Session, q: str, category: str):
@@ -354,15 +341,17 @@ def package_multi(body: MultiPackageIn, db: Session = Depends(get_db)):
     w = csv.writer(csv_buf)
     w.writerow(CSV_HEADERS)
     txt, skipped, files = [], [], []
+    order_ids = [pid for pid in ids if pid in prods]
+    got_all = dict(zip(order_ids, fetch_download_images_many([prods[pid].images or [] for pid in order_ids], limit=5)))
     for pid in ids:
         p = prods.get(pid)
         if not p:
             skipped.append(f"id {pid}: not found")
             continue
         sku = f"SP-{p.id:06d}"
-        imgs_local = _local_files(p.images or [])
+        imgs_local = got_all.get(pid) or []
         if not imgs_local:
-            skipped.append(f"{sku}: no usable stored image")
+            skipped.append(f"{sku}: image could not be downloaded from the supplier")
             continue
         if body.lang == "ko":
             title = (p.title_ko or "").strip() or (p.title_en or "").strip()
@@ -376,8 +365,8 @@ def package_multi(body: MultiPackageIn, db: Session = Depends(get_db)):
         urls = []
         for img in p.images or []:
             if isinstance(img, str) and img.strip():
-                u = img.strip()
-                urls.append(u if u.startswith(("http://", "https://")) else body.public_base.rstrip("/") + "/" + u.lstrip("/"))
+                u = unproxy(img.strip())
+                urls.append(body.public_base.rstrip("/") + proxy_path(u) if u.startswith(("http://", "https://")) else body.public_base.rstrip("/") + "/" + u.lstrip("/"))
             if len(urls) >= 5:
                 break
         urls += [""] * (5 - len(urls))
@@ -388,7 +377,7 @@ def package_multi(body: MultiPackageIn, db: Session = Depends(get_db)):
             files.append((f"images/{sku}_{i}{ext}", blob))
 
     if not files:
-        raise HTTPException(422, "None of the selected listings has a usable stored image")
+        raise HTTPException(422, "The supplier images could not be downloaded right now. Try again in a moment.")
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
     tmp.close()
@@ -449,6 +438,8 @@ def excel(body: ExcelIn, db: Session = Depends(get_db)):
 
     cur = body.currency.upper()
     rows = []
+    order_ids = [pid for pid in ids if pid in prods]
+    thumbs = dict(zip(order_ids, fetch_download_images_many([(prods[pid].images or [])[:1] for pid in order_ids], limit=1, workers=10)))
     for pid in ids:
         p = prods.get(pid)
         if not p:
@@ -466,15 +457,13 @@ def excel(body: ExcelIn, db: Session = Depends(get_db)):
         urls = []
         for img in p.images or []:
             if isinstance(img, str) and img.strip():
-                u = img.strip()
-                urls.append(u if u.startswith(("http://", "https://")) else body.public_base.rstrip("/") + "/" + u.lstrip("/"))
+                u = unproxy(img.strip())
+                urls.append(body.public_base.rstrip("/") + proxy_path(u) if u.startswith(("http://", "https://")) else body.public_base.rstrip("/") + "/" + u.lstrip("/"))
             if len(urls) >= 5:
                 break
         urls += [""] * (5 - len(urls))
-        thumb = None
-        local = _local_files(p.images[:1] if p.images else [])
-        if local:
-            thumb = local[0][0]
+        got = thumbs.get(pid) or []
+        thumb = got[0][0] if got else None
         rows.append({
             "cells": ["", title, desc, price, max(1, int(body.stock)), sku, "", *urls,
                       body.weight_g, body.length_cm, body.width_cm, body.height_cm, p.source_url or ""],

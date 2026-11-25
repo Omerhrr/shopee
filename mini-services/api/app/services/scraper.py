@@ -516,6 +516,11 @@ def slugify(text: str) -> str:
     return s[:80]
 
 
+def fast_slug(title: str, url: str) -> str:
+    """Unique without a database lookup: the url hash makes it unique per product page."""
+    return (slugify(title)[:60] or "item") + "-" + hashlib.md5(url.encode()).hexdigest()[:10]
+
+
 def unique_slug(db: Session, base: str, seed: str) -> str:
     h = hashlib.md5(seed.encode()).hexdigest()[:6]
     base = (slugify(base) or "item") + "-" + h
@@ -836,7 +841,7 @@ def scrape_source(db: Session, source: models.Source, trigger: str = "manual", d
             if url:
                 known.add(_k(url))
             img = (images or [""])[0] if isinstance(images, list) else ""
-            fps.add((title, img.rsplit("/", 1)[-1].split(".")[0]))
+            fps.add((title, _img_key(img) if img.startswith("http") else img.rsplit("/", 1)[-1].split(".")[0]))
 
         generic = generic0
 
@@ -866,9 +871,15 @@ def scrape_source(db: Session, source: models.Source, trigger: str = "manual", d
             cat = db.query(models.Category).filter(models.Category.id == int(category_id)).first()
             cat_slug = cat.slug if cat else "general"
 
+        from ..deps import get_setting as _gs
+        from .markup import apply_pricing_with, resolve_markup, compute_sell_price
+
+        global_pct = float(_gs(db, "markup_percent", 35.0))
+        cat_obj = db.query(models.Category).filter(models.Category.id == int(category_id)).first() if category_id else None
+
         def work(url: str):
             try:
-                time.sleep(random.uniform(0.1, 0.4))
+                time.sleep(random.uniform(0.05, 0.25))
                 page = fetch_html(client, url)
                 if len(page) < 800 and ("회원" in page or "login" in page.lower() or "log-in" in page.lower()):
                     return ("auth", url, None, None)
@@ -877,18 +888,19 @@ def scrape_source(db: Session, source: models.Source, trigger: str = "manual", d
                     return ("hidden", url, None, None)
                 if not item or not item.get("price"):
                     return ("skip", url, None, None)
-                imgs = fetch_image_bytes(client, item.get("images") or ([item.get("image")] if item.get("image") else []))
-                return ("ok", url, item, imgs)
+                urls = [u for u in (item.get("images") or ([item.get("image")] if item.get("image") else [])) if u]
+                return ("ok", url, item, urls[:3])
             except Exception as e:
                 return ("err", url, f"{url[:80]}: {str(e)[:120]}", None)
 
         processed = 0
-        pool = ThreadPoolExecutor(max_workers=8)
+        pool = ThreadPoolExecutor(max_workers=12)
         try:
-            for i in range(0, len(product_urls), 24):
+            for i in range(0, len(product_urls), 48):
                 if time.time() > deadline - 10 or new_count >= max_items:
                     break
-                chunk = product_urls[i : i + 24]
+                chunk = product_urls[i : i + 48]
+                batch: list = []
                 for kind, url, item, imgs in pool.map(work, chunk):
                     processed += 1
                     if kind == "auth":
@@ -906,21 +918,18 @@ def scrape_source(db: Session, source: models.Source, trigger: str = "manual", d
                         skip.append(_k(url))
                         continue
                     try:
-                        first_img = (imgs[0][0] if imgs else "") or ""
+                        first_img = (imgs[0] if imgs else "") or ""
                         fp = (item["title"][:290], _img_key(first_img) if first_img else str(item["price"]))
                         if fp in fps:
                             dup_skipped += 1
                             skip.append(_k(url))
                             continue
                         fps.add(fp)
-                        images = []
-                        for iu, data, ct in imgs:
-                            ext = "jpg" if "jpeg" in ct or "jpg" in ct else ("png" if "png" in ct else "webp")
-                            images.append(media_store.save(f"scraped/{source.id}/{_img_key(iu)}.{ext}", data, ct.split(";")[0]))
+                        images = list(imgs)  # supplier image links only: nothing is stored in our database
                         if not images:
                             images = [make_placeholder_image(source.id, item["title"], "", cat_slug)]
                         p = models.Product(
-                            slug=unique_slug(db, item["title"], url),
+                            slug=fast_slug(item["title"], url),
                             title_ko=item["title"][:290],
                             desc_ko=item.get("description") or "",
                             price_cost=item["price"],
@@ -935,14 +944,30 @@ def scrape_source(db: Session, source: models.Source, trigger: str = "manual", d
                             rating=round(random.uniform(4.3, 5.0), 1),
                             reviews=random.randint(3, 180),
                         )
-                        apply_pricing(db, p)
-                        db.add(p)
-                        db.commit()
-                        known.add(_k(url))
-                        new_count += 1
+                        p.price_sell = compute_sell_price(p.price_cost, resolve_markup(p, cat_obj, global_pct))
+                        batch.append((p, url))
                     except Exception as e:
-                        db.rollback()
                         errors.append(f"{url[:80]}: {str(e)[:120]}")
+                # one commit per batch (a commit per product made 2,000 products take minutes)
+                if batch:
+                    try:
+                        for bp, _u in batch:
+                            db.add(bp)
+                        db.commit()
+                        for _bp, bu in batch:
+                            known.add(_k(bu))
+                        new_count += len(batch)
+                    except Exception:
+                        db.rollback()
+                        for bp, bu in batch:  # a single bad row must not lose the whole batch
+                            try:
+                                db.add(bp)
+                                db.commit()
+                                known.add(_k(bu))
+                                new_count += 1
+                            except Exception as e2:
+                                db.rollback()
+                                errors.append(f"{bu[:80]}: {str(e2)[:120]}")
         finally:
             pool.shutdown(wait=False)
 

@@ -1,5 +1,6 @@
 """Serialization helpers: public (customer) vs admin (full) product views."""
 from . import models
+from .services.images import proxy_url
 
 
 def product_public(p: models.Product, lang_hint: str = "en") -> dict:
@@ -12,7 +13,7 @@ def product_public(p: models.Product, lang_hint: str = "en") -> dict:
         "desc_ko": p.desc_ko,
         "desc_en": p.desc_en,
         "price_sell": p.price_sell,
-        "images": p.images or [],
+        "images": [proxy_url(i) for i in (p.images or [])],
         "rating": p.rating,
         "reviews": p.reviews,
         "stock_status": p.stock_status,
@@ -75,7 +76,7 @@ def order_admin(o: models.Order) -> dict:
                 "product_id": i.product_id,
                 "title_ko": i.title_ko,
                 "title_en": i.title_en,
-                "image": i.image,
+                "image": proxy_url(i.image),
                 "unit_sell": i.unit_sell,
                 "unit_cost": i.unit_cost,
                 "quantity": i.quantity,
@@ -99,7 +100,7 @@ def order_public(o: models.Order) -> dict:
         "total": o.total,
         "created_at": o.created_at.isoformat() if o.created_at else None,
         "items": [
-            {"id": i.id, "title_ko": i.title_ko, "title_en": i.title_en, "image": i.image,
+            {"id": i.id, "title_ko": i.title_ko, "title_en": i.title_en, "image": proxy_url(i.image),
              "unit_sell": i.unit_sell, "quantity": i.quantity}
             for i in o.items
         ],

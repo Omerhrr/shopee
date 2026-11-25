@@ -291,6 +291,35 @@ def enable_verified_sources(db: Session) -> int:
     return enabled
 
 
+def purge_orphan_media(db: Session) -> dict:
+    """One-time: delete stored scraped photos that no product or order refers to (frees database space)."""
+    if db.query(models.Setting).filter(models.Setting.key == "_media_purged_v1").first():
+        return {"skipped": True}
+    from ..config import MEDIA_IN_DB
+    from . import media_store
+
+    deleted = 0
+    if MEDIA_IN_DB:
+        used: set[str] = set()
+        for (imgs,) in db.query(models.Product.images).all():
+            for i in imgs or []:
+                if isinstance(i, str) and not i.startswith("http"):
+                    used.add(media_store.clean_rel(i))
+        for (img,) in db.query(models.OrderItem.image).all():
+            if isinstance(img, str) and img and not img.startswith("http"):
+                used.add(media_store.clean_rel(img))
+        paths = [r[0] for r in db.query(models.MediaFile.path).filter(models.MediaFile.path.like("scraped/%")).all()]
+        orphans = [x for x in paths if x not in used]
+        for i in range(0, len(orphans), 300):
+            chunk = orphans[i : i + 300]
+            db.query(models.MediaFile).filter(models.MediaFile.path.in_(chunk)).delete(synchronize_session=False)
+            deleted += len(chunk)
+            db.commit()
+    db.add(models.Setting(key="_media_purged_v1", value=True))
+    db.commit()
+    return {"deleted_files": deleted}
+
+
 def ensure_seed(db: Session):
     seed_settings(db)
     _raise_scrape_limit(db)
@@ -298,7 +327,8 @@ def ensure_seed(db: Session):
     seed_categories(db)
     seed_sources(db)
     trim_sources(db)
-    enable_verified_sources(db)
+    purge_orphan_media(db)
+    # enable_verified_sources() is no longer called: sites you deactivate must stay deactivated.
     # Demo catalog seeding removed (real data only): seed_demo_products is no
     # longer called. The function is kept for reference/debugging but guarded
     # behind an explicit env flag.

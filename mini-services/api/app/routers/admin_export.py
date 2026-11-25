@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session, joinedload
 from starlette.background import BackgroundTask
 
 from .. import models
+from ..services.images import fetch_download_images_many, proxy_path, unproxy
 from ..services import media_store
 from ..services.translator import ensure_translated
 from ..database import get_db
@@ -33,7 +34,7 @@ router = APIRouter(prefix="/api/admin/export", tags=["admin-export"], dependenci
 TITLE_MAX = 255          # Shopee item name limit
 DESC_MAX = 3000
 MAX_IMAGES = 5           # image URL columns in the mass-upload CSV
-MAX_ZIP_FILES = 3000
+MAX_ZIP_FILES = 300  # images are fetched live from the suppliers
 ALLOWED_IMG_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 
 
@@ -112,9 +113,9 @@ def _image_urls(prod: models.Product, base: str) -> list[str]:
     for img in (prod.images or []):
         if not isinstance(img, str) or not img.strip():
             continue
-        u = img.strip()
+        u = unproxy(img.strip())
         if u.startswith(("http://", "https://")):
-            urls.append(u)
+            urls.append(base.rstrip("/") + proxy_path(u))
         else:
             urls.append(base.rstrip("/") + "/" + u.lstrip("/"))
         if len(urls) >= MAX_IMAGES:
@@ -269,18 +270,16 @@ def export_csv(p: ExportParams = Depends(), db: Session = Depends(get_db)):
 @router.get("/shopee-images.zip")
 def export_images_zip(p: ExportParams = Depends(), db: Session = Depends(get_db)):
     """Product images named by Item SKU so they can be matched to CSV rows in Seller Center."""
-    prods = _filter_query(db, p).all()
+    prods = _filter_query(db, p).limit(MAX_ZIP_FILES).all()
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
     tmp.close()
     added = 0
+    fetched = fetch_download_images_many([prod.images or [] for prod in prods], limit=1)
     with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_DEFLATED) as z:
-        for prod in prods:
-            if added >= MAX_ZIP_FILES:
-                break
-            hit = _local_image(prod)
-            if not hit:
+        for prod, got in zip(prods, fetched):
+            if not got:
                 continue
-            blob, ext = hit
+            blob, ext = got[0]
             z.writestr(f"SP-{prod.id:06d}{ext}", blob)
             added += 1
     stamp = datetime.now().strftime("%Y%m%d")
